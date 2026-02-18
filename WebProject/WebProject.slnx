@@ -1,4 +1,14 @@
 <Solution>
+  <Folder Name="/Common/">
+    <Project Path="Common.Library.Endpoints/Common.Library.Endpoints.csproj" />
+  </Folder>
+  <Folder Name="/Modules/" />
+  <Folder Name="/Modules/Sample/">
+    <Project Path="Sample.Application/Sample.Application.csproj" />
+    <Project Path="Sample.Domain/Sample.Domain.csproj" />
+    <Project Path="Sample.Infrastructure/Sample.Infrastructure.csproj" />
+    <Project Path="Sample.Public/Sample.Public.csproj" />
+  </Folder>
   <Project Path="WebProject.Api/WebProject.Api.csproj" />
   <Project Path="WebProject.AppHost/WebProject.AppHost.csproj" />
   <Project Path="WebProject.ServiceDefaults/WebProject.ServiceDefaults.csproj" />

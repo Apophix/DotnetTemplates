@@ -11,6 +11,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Sample.Application\Sample.Application.csproj" />
       <ProjectReference Include="..\WebProject.ServiceDefaults\WebProject.ServiceDefaults.csproj" />
     </ItemGroup>
 

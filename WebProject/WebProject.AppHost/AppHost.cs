@@ -1,5 +1,5 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-builder.AddProject<Projects.WebProject_Api>("webproject-api");
+var api = builder.AddProject<Projects.WebProject_Api>("api");
 
 builder.Build().Run();
