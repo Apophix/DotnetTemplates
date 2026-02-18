@@ -3,6 +3,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 var api = builder.AddProject<Projects.WebProject_Api>("api");
 
 var web = builder.AddViteApp("web", "../WebProject.Web")
+    .WithEndpoint("http", e => e.Port = 5173)
     .WithEnvironment("VITE_API_URL", api.GetEndpoint("https"))
     .WithReference(api);
 

@@ -12,6 +12,10 @@ import { fileURLToPath, URL } from 'url'
 import tailwindcss from '@tailwindcss/vite'
 
 const config = defineConfig({
+  server: {
+    port: Number(process.env['PORT'] ?? 5173),
+    strictPort: true,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
