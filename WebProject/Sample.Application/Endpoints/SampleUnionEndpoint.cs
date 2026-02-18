@@ -17,6 +17,18 @@ public class SampleUnionEndpoint : Ep.NoReq.Res<SampleUnionResponse>
             .WithSummary("Returns a union response with either option 1 or option 2")
             .ProducesUnionResponse());
     }
+
+    public override Task HandleAsync(CancellationToken ct)
+    {
+        var option1 = new SampleOption1 { Name = "John Doe" };
+        var option2 = new SampleOption2 { Age = 30 };
+
+        // For demonstration, we'll randomly return either option 1 or option 2
+        var random = new Random();
+        var response = random.Next(2) == 0 ? (SampleUnionResponse)option1 : (SampleUnionResponse)option2;
+
+        return Send.OkAsync(response, cancellation: ct);
+    }
 }
 
 public class SampleUnionResponse

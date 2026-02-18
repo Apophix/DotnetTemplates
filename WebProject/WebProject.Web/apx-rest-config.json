@@ -1,0 +1,11 @@
+{
+  "apis": [
+    {
+      "openApiJsonDocumentUrl": "https://localhost:7100/openapi/v1.json",
+      "clientName": "MyApiClient",
+      "clientBaseUrlValue": "import.meta.env.VITE_API_BASE_URL",
+      "outputBaseDirectory": "./src/lib/clients",
+      "streamedEndpoints": []
+    }
+  ]
+}
