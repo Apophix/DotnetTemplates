@@ -2,7 +2,7 @@
 //  AUTO-GENERATED FILE — apx.rest
 //  Do not modify this file directly.
 // -----------------------------------------------------------------------------
-//  Generated on: 2026-02-18T02:38:51.974Z
+//  Generated on: 2026-02-18T12:45:20.191Z
 //  Source OpenAPI document: https://localhost:7100/openapi/v1.json
 //  This file will be overwritten on regeneration.
 //
@@ -18,8 +18,8 @@
 import { ApiClient, type TApiRequestOptions, type TApiClientResult } from "apx.rest";
 
 export type TSampleUnionResponseDto = { 
-	option1?: SampleOption1;
-	option2?: SampleOption2;
+	option1?: TSampleOption1Dto;
+	option2?: TSampleOption2Dto;
 };
 
 export class SampleUnionResponse {
@@ -27,8 +27,8 @@ export class SampleUnionResponse {
 	public option2?: SampleOption2;
 
 	public constructor(dto: TSampleUnionResponseDto) {
-		this.option1 = dto.option1;
-		this.option2 = dto.option2;
+		this.option1 = dto.option1 ? new SampleOption1(dto.option1) : undefined;
+		this.option2 = dto.option2 ? new SampleOption2(dto.option2) : undefined;
 	}
 	public switch(
 		option1: (value: SampleOption1) => void,
@@ -71,11 +71,11 @@ export class SampleOption1 {
 }
 
 export type TSampleOption2Dto = { 
-	age: undefined;
+	age: number;
 };
 
 export class SampleOption2 {
-	public age: undefined;
+	public age: number;
 
 	public constructor(dto: TSampleOption2Dto) {
 		this.age = dto.age;
