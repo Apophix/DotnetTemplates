@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json.schemastore.org",
+  "author": "Pat Howe",
+  "classifications": [ "Solution", "Multi-project", "Custom" ],
+  "identity": "WebProject.CSharp",
+  "name": "WebProject Solution Template",
+  "shortName": "webproject",
+  "tags": {
+    "type": "solution"
+  },
+  "sourceName": "WebProject"
+}
