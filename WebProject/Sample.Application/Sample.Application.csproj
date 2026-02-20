@@ -8,11 +8,13 @@
 
   <ItemGroup>
     <PackageReference Include="FastEndpoints" />
+    <PackageReference Include="Mapster" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Common.Library.Api\Common.Library.Api.csproj" />
     <ProjectReference Include="..\Sample.Infrastructure\Sample.Infrastructure.csproj" />
+    <ProjectReference Include="..\Sample.Public\Sample.Public.csproj" />
   </ItemGroup>
 
 </Project>
