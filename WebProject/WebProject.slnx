@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/Common/">
+    <Project Path="Common.Library.DevSeeder/Common.Library.DevSeeder.csproj" />
     <Project Path="Common.Library.Endpoints/Common.Library.Endpoints.csproj" />
     <Project Path="Common.Library.Logging/Common.Library.Logging.csproj" />
   </Folder>
@@ -12,5 +13,6 @@
   </Folder>
   <Project Path="WebProject.Api/WebProject.Api.csproj" />
   <Project Path="WebProject.AppHost/WebProject.AppHost.csproj" />
+  <Project Path="WebProject.MigrationService/WebProject.MigrationService.csproj" />
   <Project Path="WebProject.ServiceDefaults/WebProject.ServiceDefaults.csproj" />
 </Solution>

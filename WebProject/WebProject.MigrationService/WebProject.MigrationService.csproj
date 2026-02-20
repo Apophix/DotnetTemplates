@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>dotnet-WebProject.MigrationService-cb54616e-252f-4015-b5b9-dc3bd4da57e7</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+      <PackageReference Include="Microsoft.Extensions.Hosting" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Common.Library.DevSeeder\Common.Library.DevSeeder.csproj" />
+      <ProjectReference Include="..\Sample.Infrastructure\Sample.Infrastructure.csproj" />
+      <ProjectReference Include="..\WebProject.ServiceDefaults\WebProject.ServiceDefaults.csproj" />
+    </ItemGroup>
+    
+</Project>

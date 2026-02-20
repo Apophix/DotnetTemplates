@@ -10,11 +10,14 @@
 
     <ItemGroup>
       <ProjectReference Include="..\WebProject.Api\WebProject.Api.csproj" />
+      <ProjectReference Include="..\WebProject.MigrationService\WebProject.MigrationService.csproj" />
     </ItemGroup>
 
     <ItemGroup>
       <PackageReference Include="Aspire.Hosting.JavaScript" />
+      <PackageReference Include="Aspire.Hosting.PostgreSQL" />
       <PackageReference Include="Aspire.Hosting.Seq" />
+      <PackageReference Include="Aspire.Hosting.SqlServer" />
     </ItemGroup>
 
 </Project>
