@@ -11,6 +11,9 @@
     <Project Path="Sample.Infrastructure/Sample.Infrastructure.csproj" />
     <Project Path="Sample.Public/Sample.Public.csproj" />
   </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="FitnessTests/FitnessTests.csproj" />
+  </Folder>
   <Project Path="WebProject.Api/WebProject.Api.csproj" />
   <Project Path="WebProject.AppHost/WebProject.AppHost.csproj" />
   <Project Path="WebProject.MigrationService/WebProject.MigrationService.csproj" />
