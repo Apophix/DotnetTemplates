@@ -44,6 +44,7 @@ var web = builder.AddViteApp("web", "../WebProject.Web")
 api.WithReference(web);
 
 builder.Build().Run();
+return;
 
 static bool IsPortInUse(int port)
 {
