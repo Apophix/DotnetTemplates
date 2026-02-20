@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/Common/">
     <Project Path="Common.Library.Endpoints/Common.Library.Endpoints.csproj" />
+    <Project Path="Common.Library.Logging/Common.Library.Logging.csproj" />
   </Folder>
   <Folder Name="/Modules/" />
   <Folder Name="/Modules/Sample/">

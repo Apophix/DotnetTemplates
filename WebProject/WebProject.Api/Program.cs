@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Common.Library.Logging;
 using FastEndpoints;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.OpenApi;
@@ -9,6 +10,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Aspire defaults
 builder.AddServiceDefaults();
+
+// Serilog
+builder.AddSerilogLogging();
 
 // enums work better this way
 builder.Services.Configure<JsonOptions>(o =>
