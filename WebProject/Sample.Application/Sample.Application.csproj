@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Common.Library.Endpoints\Common.Library.Endpoints.csproj" />
+    <ProjectReference Include="..\Common.Library.Api\Common.Library.Api.csproj" />
     <ProjectReference Include="..\Sample.Infrastructure\Sample.Infrastructure.csproj" />
   </ItemGroup>
 

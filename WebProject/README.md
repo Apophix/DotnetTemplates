@@ -8,9 +8,8 @@ A full-stack solution template built for rapid development with a clean modular 
 
 ```
 /Common/                        Shared libraries used across all modules
-  Common.Library.Api            API defaults: JSON, CORS, FastEndpoints, OpenAPI, global exception handler
+  Common.Library.Api            API defaults, global exception handler, FastEndpoints helpers, OpenAPI extensions
   Common.Library.DevSeeder      Development data seeding helpers
-  Common.Library.Endpoints      FastEndpoints base classes and OpenAPI helpers
   Common.Library.Logging        Serilog configuration (console + Seq)
 
 /Modules/{ModuleName}/          One folder per bounded context

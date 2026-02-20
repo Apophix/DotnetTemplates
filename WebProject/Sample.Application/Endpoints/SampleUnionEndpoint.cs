@@ -1,5 +1,5 @@
 ﻿using System.Text.Json.Serialization;
-using Common.Library.Endpoints;
+using Common.Library.Api;
 using FastEndpoints;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

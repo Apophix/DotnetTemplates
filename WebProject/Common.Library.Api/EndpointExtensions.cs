@@ -1,9 +1,9 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.OpenApi;
 
-namespace Common.Library.Endpoints;
+namespace Common.Library.Api;
 
-public static class Extensions
+public static class EndpointExtensions
 {
     extension<TBuilder>(TBuilder builder) where TBuilder : IEndpointConventionBuilder
     {
