@@ -6,10 +6,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Common.Library.Api;
 
-internal sealed class GlobalExceptionHandler(
-    IHostEnvironment env,
-    ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
+internal sealed class GlobalExceptionHandler : IExceptionHandler
 {
+    private readonly IHostEnvironment _env;
+    private readonly ILogger<GlobalExceptionHandler> _logger;
+
+    public GlobalExceptionHandler(IHostEnvironment env,
+        ILogger<GlobalExceptionHandler> logger)
+    {
+        _env = env;
+        _logger = logger;
+    }
+
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
         Exception exception,
@@ -23,10 +31,10 @@ internal sealed class GlobalExceptionHandler(
         };
 
         if (statusCode >= 500)
-            logger.LogError(exception, "Unhandled {ExceptionType}: {Message}", exception.GetType().Name,
+            _logger.LogError(exception, "Unhandled {ExceptionType}: {Message}", exception.GetType().Name,
                 exception.Message);
         else
-            logger.LogWarning(exception, "Handled {ExceptionType}: {Message}", exception.GetType().Name,
+            _logger.LogWarning(exception, "Handled {ExceptionType}: {Message}", exception.GetType().Name,
                 exception.Message);
 
         httpContext.Response.StatusCode = statusCode;
@@ -36,7 +44,7 @@ internal sealed class GlobalExceptionHandler(
             Status = statusCode,
             Title = title,
             Type = $"https://httpstatuses.io/{statusCode}",
-            Detail = env.IsDevelopment() ? exception.Message : null,
+            Detail = _env.IsDevelopment() ? exception.Message : null,
         };
 
         await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);
