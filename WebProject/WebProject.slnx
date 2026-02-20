@@ -10,6 +10,7 @@
     <Project Path="Sample.Domain/Sample.Domain.csproj" />
     <Project Path="Sample.Infrastructure/Sample.Infrastructure.csproj" />
     <Project Path="Sample.Public/Sample.Public.csproj" />
+    <Project Path="Sample.Tests/Sample.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="FitnessTests/FitnessTests.csproj" />
