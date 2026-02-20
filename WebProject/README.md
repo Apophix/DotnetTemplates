@@ -37,7 +37,7 @@ WebProject.Web                  React SPA frontend
 - **.NET 10** Web API
 - **Aspire** orchestration with persistent containers (no re-pull on restart)
 - **FastEndpoints** for endpoint definition
-- **OpenAPI 3.0** with [apx.rest](https://apx.rest) client generation
+- **OpenAPI 3.0** with [apx.rest](https://github.com/Apophix/apx.rest) client generation
 - **EF Core** with **PostgreSQL** (default) or **SQL Server** (swap two lines in `AppHost.cs`)
 - **Serilog** structured logging — console + Seq sink (auto-wired when Seq connection string present)
 - **Global exception handler** — maps common exception types to HTTP status codes
@@ -98,7 +98,7 @@ The test runs on every build/CI and fails with a list of violations if the rule 
 - **TanStack Start** in SPA mode (no SSR / server functions)
 - **TanStack Router** for file-based routing
 - **TanStack Query** for all data fetching
-- **[apx.rest](https://apx.rest)** auto-generated API client
+- **[apx.rest](https://github.com/Apophix/apx.rest)** auto-generated API client
 
 ### Regenerating the API client
 
