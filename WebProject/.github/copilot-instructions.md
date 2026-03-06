@@ -46,7 +46,7 @@ You're working on this web project, which is a modern full-stack application tem
 ❌ Don't add dependencies without justification  
 ❌ Don't mix business logic in React components
 ❌ Don't add any server functions or use any serverside functionality of the Tanstack Start framework. SPA, client code only!
-❌ Don't build HTTP requests manually. Use apx.rest! You can run `npx apx-gen` to regenerate the client, which references the OpenAPI specification from the API(s)
+❌ Don't build HTTP requests manually. Use apx.rest! You can run `npx apx-gen` to regenerate the client, which references the OpenAPI specification from the API(s). The APIs do NOT need to be running, as long as the OpenAPI spec is up to date. The spec is generated when the API builds.
 
 ## Code Patterns
 
@@ -214,9 +214,9 @@ using System.Threading.Tasks;
 2. Backend: Use `.WithName("operationName")` in endpoint configuration
 3. Backend: Ensure DTOs serialize to camelCase JSON
 4. Frontend: Regenerate API client:
-    - Ensure API is running and updated
+    - Ensure API is updated and built (OpenAPI spec is generated on build) (use dotnet commands to build if needed)
     - Run `npx apx-gen` in `[Project].Web`
-    - (apx.rest will pick up OpenAPI changes from live API)
+    - (apx.rest will pick up OpenAPI changes and regenerate client code)
 5. Frontend: Use `useApiClient()` (or similar) + TanStack Query to call endpoint
 
 ## EF Core Migrations
