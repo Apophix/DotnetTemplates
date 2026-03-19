@@ -1,0 +1,70 @@
+---
+description: Frontend rules for TypeScript and React files
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: false
+---
+
+# Frontend Rules (TypeScript / React)
+
+## TypeScript Rules
+- Strict mode always — type everything, never use `any` (use `unknown` if truly needed)
+- Prefer `interface` for public API shapes, `type` for unions/intersections
+- Use `as const` for literal types; use `satisfies` for type-checked object literals without widening
+- Named functions preferred: `function foo() {}` — not `const foo = () => {}`
+- Arrow functions are fine for lambdas: `.map(item => ...)`, inline callbacks
+
+## React Rules
+- Functional components with hooks only
+- Keep components simple and focused — no business logic inside components
+- No global state management — use React hooks + TanStack Query instead
+- No inline styles — use Tailwind classes only
+
+## TanStack Stack
+- **Router**: File-based routing via `createFileRoute` in `src/routes/`
+- **Query**: All API calls go through TanStack Query (`useQuery`, `useMutation`)
+- **Form**: Use TanStack Form for complex forms instead of manual state
+- **Start**: SPA mode only — never use server functions or any server-side TanStack Start features
+
+## UI & Styling
+- Prefer **Shadcn** components for UI elements when available
+- Use **Tailwind v4** utility classes for all styling — prefer theme colors (e.g., `bg-primary`) over built-in colors (e.g., `bg-blue-600`)
+- Use `cn()` from `@/shared/lib/utils` for conditional class names
+- Responsive: use `sm:`, `md:`, `lg:` prefixes as needed
+
+## API Client
+- Always use `useApiClient()` hook + TanStack Query — never build HTTP requests manually
+- **Never edit** files in `src/shared/clients/` — they are auto-generated
+- To regenerate after backend changes: `npx apx-gen` (run from `[Project].Web`)
+- The API does not need to be running — the OpenAPI spec is generated at build time (`dotnet build`)
+
+```typescript
+// Standard query pattern
+const client = useApiClient()
+const { data, isLoading, error } = useQuery({
+  queryKey: ['resource', id],
+  queryFn: async () => {
+    const [result] = await client.getResource({ id })
+    if (!result) throw new Error('Failed to load')
+    return result
+  },
+})
+```
+
+## File Organization
+- `src/routes/` — TanStack Router pages (`createFileRoute`)
+- `src/shared/clients/` — AUTO-GENERATED, do not edit
+- `src/shared/hooks/` — reusable React hooks
+- `src/shared/lib/` — pure utility functions
+- `src/modules/[feature]/` — group related files when a feature needs 3+ files
+
+## Naming Conventions
+- Files: `kebab-case.tsx` (general) or `PascalCase.tsx` (components)
+- Components: `PascalCase`
+- Functions & variables: `camelCase`
+- Constants: `UPPER_SNAKE_CASE` or `camelCase`
+- Types/Interfaces: `PascalCase`
+
+## Import Style
+- Use `@/` for all absolute imports (e.g., `@/shared/hooks/useApiClient`)
+- No barrel exports (`index.ts` re-exports) unless genuinely needed
+- No new dependencies without justification
