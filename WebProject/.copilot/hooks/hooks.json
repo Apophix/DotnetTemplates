@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "powershell": "./scripts/block-dangerous-git.ps1",
+        "cwd": "hooks",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}
