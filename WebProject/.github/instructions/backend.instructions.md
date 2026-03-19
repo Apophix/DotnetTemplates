@@ -1,0 +1,92 @@
+---
+applyTo: "**/*.cs"
+---
+
+# Backend Instructions (C# / .NET)
+
+## C# Style
+- Use modern collection expressions `[]` instead of `new List<T> {}` or `new T[] {}`
+- Naming: `PascalCase` for classes, methods, properties; `camelCase` for local variables and parameters
+- Keep methods focused; prefer dependency injection over static helpers
+
+## FastEndpoints Pattern
+- All endpoints inherit `Ep.Req<TRequest>.Res<TResponse>` (or `Ep.NoReq.Res<T>` for GET with no body)
+- Configure in `Configure()`: set route, `.WithName("camelCaseName")`, and auth
+- Always use `.WithName("camelCase")` — this drives the generated API client operation name
+- Place endpoints in `[Context].Application/Endpoints/`
+
+```csharp
+public class GetItems : Ep.NoReq.Res<GetItemsResponse>
+{
+    public override void Configure()
+    {
+        Get("context/items");
+        Description(b => b.WithName("getItems"));
+        AllowAnonymous();
+    }
+
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        // ...
+        await Send.OkAsync(new GetItemsResponse { Items = items }, ct);
+    }
+}
+```
+
+## Response Envelope Pattern
+All API responses use an envelope wrapper — never return raw models directly:
+
+```csharp
+// Single item
+public class GetItemResponse { public required ItemResponseModel Item { get; set; } }
+
+// Collection
+public class GetItemsResponse { public required List<ItemResponseModel> Items { get; set; } }
+
+// Shared model (cross-module): place in [Module].Public/EndpointContracts/
+public class ItemResponseModel
+{
+    public required Guid Id { get; set; }
+    public required string Name { get; set; }
+}
+```
+
+## DTO Naming
+- Endpoint input/output: `___Request` / `___Response`
+- GET response data model: `___ResponseModel` (not `Dto`)
+- Shared cross-module models: in `[Module].Public/EndpointContracts/`
+- Cross-module DTOs: in `[Module].Public/Dto/` named `___Dto` (e.g. `UserDto`) — these are for internal use only, not web API contracts
+
+## Bounded Context Structure
+```
+[Context].Domain/          — entities, value objects
+[Context].Application/     — FastEndpoints, services, mapping
+[Context].Infrastructure/  — EF DbContext, migrations, repos
+[Context].Public/          — DTOs for cross-module use only
+```
+- Modules **never reference each other directly** — only via the `.Public` layer
+- APIs must output **camelCase JSON** (configured in `Common.Library.Api`)
+
+## EF Core Migrations
+**Never create migration files manually.** Always use:
+
+```powershell
+dotnet ef migrations add MigrationName `
+  --project [Module].Infrastructure `
+  --startup-project [Project].MigrationService `
+  --context [Module]DbContext
+```
+
+Migrations go in `[Module].Infrastructure/Persistence/Migrations/`.
+
+**If the command fails, fix the root cause first:**
+1. DbContext constructor accepts `DbContextOptions<T>`
+2. `OnModelCreating` calls `ApplyConfigurationsFromAssembly`
+3. Entity configs implement `IEntityTypeConfiguration<T>`
+4. Infrastructure project has required EF NuGet packages
+5. MigrationService references the Infrastructure project
+6. No compilation errors in Domain/Infrastructure
+
+## Query Performance
+- Avoid N+1 queries — use `.Include()` for navigation properties or `.Select()` projections
+- Prefer projections (`Select`) over loading full entities when only a subset of fields is needed
