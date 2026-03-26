@@ -1,0 +1,394 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: WebProject.Web/package-lock.json
+
+      - name: Restore
+        run: |
+          for attempt in 1 2 3; do
+            dotnet restore WebProject.slnx && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      - name: Test
+        run: |
+          dotnet test WebProject.slnx \
+            --configuration Release \
+            --no-restore \
+            --filter "FullyQualifiedName!~Integration"
+
+      - name: Publish API
+        run: |
+          dotnet publish WebProject.Api/WebProject.Api.csproj \
+            --configuration Release \
+            --output publish/api \
+            --no-restore
+
+      - name: Publish migration service
+        run: |
+          dotnet publish WebProject.MigrationService/WebProject.MigrationService.csproj \
+            --configuration Release \
+            --output publish/migration \
+            --no-restore
+
+      - name: Build frontend (staging)
+        working-directory: WebProject.Web
+        env:
+          VITE_API_BASE_URL: https://app-webprojectazureprefix-api-staging.azurewebsites.net
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-staging
+          path: WebProject.Web/dist/client
+
+      - name: Build frontend (production)
+        working-directory: WebProject.Web
+        env:
+          VITE_API_BASE_URL: https://app-webprojectazureprefix-api.azurewebsites.net
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api
+          path: publish/api
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migration
+          path: publish/migration
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-prod
+          path: WebProject.Web/dist/client
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: api
+          path: ./api
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-staging
+          path: ./web
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sync shared + staging config to App Configuration
+        run: |
+          chmod +x config/sync-appconfig.sh
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope shared && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope staging && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      - name: Deploy API → staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: app-webprojectazureprefix-api
+          slot-name: staging
+          package: ./api
+
+      - name: Get SWA deployment token
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          TOKEN=$(az_retry az staticwebapp secrets list \
+            --name swa-webprojectazureprefix --resource-group rg-webprojectazureprefix \
+            --query properties.apiKey -o tsv)
+          echo "::add-mask::${TOKEN}"
+          echo "SWA_TOKEN=${TOKEN}" >> $GITHUB_ENV
+
+      - name: Deploy frontend → SWA staging environment
+        id: swa_deploy
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          action: upload
+          app_location: ./web
+          skip_app_build: true
+          deployment_environment: staging
+
+      - name: Set CORS allowed origin on staging slot
+        run: |
+          for i in {1..6}; do
+            az webapp config appsettings set \
+              --resource-group rg-webprojectazureprefix \
+              --name app-webprojectazureprefix-api \
+              --slot staging \
+              --settings "Cors__AllowedOrigins=${{ steps.swa_deploy.outputs.static_web_app_url }}" \
+              --output none && exit 0
+            echo "Attempt $i/6 failed (slot busy) — retrying in 15s..."
+            sleep 15
+          done
+          exit 1
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## ✅ Deploy to staging" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deploy to staging failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check the failed step above. Common causes:" >> $GITHUB_STEP_SUMMARY
+            echo "- **Slot 409 Conflict**: slot is still processing a previous operation — the retry loop should handle this; if it persists, check Azure portal for stuck operations" >> $GITHUB_STEP_SUMMARY
+            echo "- **AppConfig unavailable**: transient Azure outage — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **Key Vault throttled**: too many requests — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **Swap health check failed**: check staging slot logs at https://portal.azure.com" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  smoke-test:
+    name: Smoke test staging
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check — API staging
+        run: |
+          for i in {1..12}; do
+            HTTP=$(curl -s -o /tmp/health_body.txt -w "%{http_code}" \
+              https://app-webprojectazureprefix-api-staging.azurewebsites.net/health || echo "000")
+            echo "Attempt $i/12 — HTTP $HTTP"
+            cat /tmp/health_body.txt 2>/dev/null || true
+            echo ""
+            if [ "$HTTP" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Health check failed after 12 attempts"
+          exit 1
+
+  migrate-prod:
+    name: Migrate production database
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: migration
+          path: ./migration
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run migrations against production database
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          KV=$(az_retry az keyvault list -g rg-webprojectazureprefix \
+            --query "[?tags.environment=='production'].name" -o tsv)
+          CONN=$(az_retry az keyvault secret show \
+            --vault-name "${KV}" --name sql-connection-string \
+            --query value -o tsv)
+          echo "::add-mask::${CONN}"
+          ASPNETCORE_ENVIRONMENT=Production \
+          ConnectionStrings__DefaultConnection="${CONN}" \
+          dotnet ./migration/WebProject.MigrationService.dll
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## ✅ Migrate production database" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Migrate production database failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check the failed step above. Common causes:" >> $GITHUB_STEP_SUMMARY
+            echo "- **Key Vault throttled**: too many requests — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **Migration failure** — check if migration is safe to re-run (EF migrations are idempotent by default)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  promote:
+    name: Promote to production
+    needs: migrate-prod
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-prod
+          path: ./web
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sync production config to App Configuration
+        run: |
+          chmod +x config/sync-appconfig.sh
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope production && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      - name: Set CORS origin on staging slot to production SWA URL (pre-swap)
+        run: |
+          # Non-sticky app settings travel with the slot during a swap.
+          # Cors__AllowedOrigins was set to the staging SWA URL in deploy-staging.
+          # Update it to the production SWA URL before the swap so the correct
+          # value lands in the production slot without requiring a post-swap restart.
+          SWA_HOSTNAME=$(az staticwebapp show \
+            --name swa-webprojectazureprefix --resource-group rg-webprojectazureprefix \
+            --query defaultHostname -o tsv)
+          for i in {1..6}; do
+            az webapp config appsettings set \
+              --resource-group rg-webprojectazureprefix \
+              --name app-webprojectazureprefix-api \
+              --slot staging \
+              --settings "Cors__AllowedOrigins=https://${SWA_HOSTNAME}" \
+              --output none && exit 0
+            echo "Attempt $i/6 failed (slot busy) — retrying in 15s..."
+            sleep 15
+          done
+          exit 1
+
+      - name: Wait for staging slot to be healthy before swap
+        run: |
+          for i in {1..12}; do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://app-webprojectazureprefix-api-staging.azurewebsites.net/health || echo "000")
+            echo "Attempt $i/12 — HTTP $HTTP"
+            if [ "$HTTP" = "200" ]; then
+              echo "Staging slot is healthy — proceeding with swap"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Staging slot failed health check before swap"
+          exit 1
+
+      - name: Swap API staging → production
+        run: |
+          # Run synchronously — the command blocks until Azure confirms the swap
+          # succeeded or fails with a non-zero exit code. Do not use `timeout` here:
+          # a CLI timeout causes the swap to continue in Azure while the workflow
+          # moves on, and the subsequent health check then sees HTTP 200 from the
+          # *old* production slot still serving traffic, producing a false positive.
+          az webapp deployment slot swap \
+            --resource-group rg-webprojectazureprefix \
+            --name app-webprojectazureprefix-api \
+            --slot staging \
+            --target-slot production
+
+          echo "Swap complete — verifying production health..."
+          for i in {1..12}; do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://app-webprojectazureprefix-api.azurewebsites.net/health || echo "000")
+            echo "Attempt $i/12 — HTTP $HTTP"
+            if [ "$HTTP" = "200" ]; then
+              echo "Production slot is healthy"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production health check failed after swap"
+          exit 1
+
+      - name: Get SWA deployment token
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          TOKEN=$(az_retry az staticwebapp secrets list \
+            --name swa-webprojectazureprefix --resource-group rg-webprojectazureprefix \
+            --query properties.apiKey -o tsv)
+          echo "::add-mask::${TOKEN}"
+          echo "SWA_TOKEN=${TOKEN}" >> $GITHUB_ENV
+
+      - name: Deploy frontend → SWA production
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          action: upload
+          app_location: ./web
+          skip_app_build: true
+          # No deployment_environment = production
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## ✅ Promote to production" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Promote to production failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check the failed step above. Common causes:" >> $GITHUB_STEP_SUMMARY
+            echo "- **Slot 409 Conflict**: slot is still processing a previous operation — the retry loop should handle this; if it persists, check Azure portal for stuck operations" >> $GITHUB_STEP_SUMMARY
+            echo "- **AppConfig unavailable**: transient Azure outage — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **Key Vault throttled**: too many requests — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **Swap health check failed**: check staging slot logs at https://portal.azure.com" >> $GITHUB_STEP_SUMMARY
+          fi

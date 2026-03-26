@@ -8,22 +8,45 @@
   "tags": {
     "type": "solution"
   },
-  "sourceName": "WebProject", 
-  "sources": [ 
-	{ 
-		"modifiers": [
-			{ 
-				"exclude": [
-					"**/[Bb]in/**",
-					"**/[Oo]bj/**",
-					".template.config/**/*",
-					"**/*.filelist",
-					"**/*.user",
-					"**/*.lock.json",
-					"**/node_modules/**"
-				]
-			}
-		]
-	}
+  "sourceName": "WebProject",
+  "symbols": {
+    "UseAzureAppServiceInfra": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Include Azure App Service infrastructure (Bicep IaC, GitHub Actions CI/CD, config sync scripts).",
+      "defaultValue": "false"
+    },
+    "AzureResourcePrefix": {
+      "type": "parameter",
+      "datatype": "string",
+      "description": "Short lowercase alphanumeric prefix for Azure resource names (3-10 chars, e.g. 'myapp'). Only used when UseAzureAppServiceInfra is true.",
+      "defaultValue": "myapp",
+      "replaces": "webprojectazureprefix"
+    }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        {
+          "exclude": [
+            "**/[Bb]in/**",
+            "**/[Oo]bj/**",
+            ".template.config/**/*",
+            "**/*.filelist",
+            "**/*.user",
+            "**/*.lock.json",
+            "**/node_modules/**"
+          ]
+        },
+        {
+          "condition": "(!UseAzureAppServiceInfra)",
+          "exclude": [
+            ".github/workflows/**",
+            "infra/**",
+            "config/**"
+          ]
+        }
+      ]
+    }
   ]
 }
