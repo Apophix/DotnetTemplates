@@ -38,7 +38,7 @@ api.WithReference(database).WaitFor(database);
 
 var web = builder.AddViteApp("web", "../WebProject.Web")
     .WithEndpoint("http", e => e.Port = 5173)
-    .WithEnvironment("VITE_API_URL", api.GetEndpoint("https"))
+    .WithEnvironment("VITE_API_BASE_URL", api.GetEndpoint("https"))
     .WithReference(api);
 
 api.WithReference(web);

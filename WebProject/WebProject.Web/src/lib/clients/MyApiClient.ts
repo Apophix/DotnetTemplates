@@ -2,7 +2,7 @@
 //  AUTO-GENERATED FILE — apx.rest
 //  Do not modify this file directly.
 // -----------------------------------------------------------------------------
-//  Generated on: 2026-03-06T01:17:27.363Z
+//  Generated on: 2026-04-04T18:45:20.508Z
 //  Source OpenAPI document: C:\Sandbox\DotnetTemplates\WebProject\WebProject.Api\obj\WebProject.Api.json
 //  This file will be overwritten on regeneration.
 //
@@ -16,6 +16,36 @@
 /* eslint-disable */
 
 import { ApiClient, type TApiRequestOptions, type TApiClientResult } from "apx.rest";
+
+export type TCheckoutVariantResponseDto = { 
+	variant: string;
+	description: string;
+	total: number;
+};
+
+export class CheckoutVariantResponse {
+	public variant: string;
+	public description: string;
+	public total: number;
+
+	public constructor(dto: TCheckoutVariantResponseDto) {
+		this.variant = dto.variant;
+		this.description = dto.description;
+		this.total = dto.total;
+	}
+}
+
+export type TFeatureFlagsResponseDto = { 
+	flags: Record<string, boolean>;
+};
+
+export class FeatureFlagsResponse {
+	public flags: Map<string, boolean>;
+
+	public constructor(dto: TFeatureFlagsResponseDto) {
+		this.flags = new Map(Object.entries(dto.flags).map(([key, value]) => [key, value]));
+	}
+}
 
 export type TSampleUnionResponseDto = { 
 	option1?: TSampleOption1Dto;
@@ -87,6 +117,26 @@ export class MyApiClient extends ApiClient {
 		super(import.meta.env.VITE_API_BASE_URL);
 	}
 
+	public async getFeatureFlags(options?: TApiRequestOptions): Promise<TApiClientResult<FeatureFlagsResponse>> {
+
+		const { response, data } = await this.get<TFeatureFlagsResponseDto>(`feature-flags`, options);
+
+		if (!response.ok || !data) {
+			return [null, response];
+		}
+
+		return [new FeatureFlagsResponse(data), response]; 
+	}
+	public async getCheckoutVariant(options?: TApiRequestOptions): Promise<TApiClientResult<CheckoutVariantResponse>> {
+
+		const { response, data } = await this.get<TCheckoutVariantResponseDto>(`checkout-variant`, options);
+
+		if (!response.ok || !data) {
+			return [null, response];
+		}
+
+		return [new CheckoutVariantResponse(data), response]; 
+	}
 	public async getSampleUnionResponse(options?: TApiRequestOptions): Promise<TApiClientResult<SampleUnionResponse>> {
 
 		const { response, data } = await this.get<TSampleUnionResponseDto>(`sample-union`, options);
