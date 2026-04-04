@@ -37,6 +37,11 @@ public static class ApiExtensions
             builder.Services.AddProblemDetails();
             builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
+            // Authentication services — no real scheme registered yet.
+            // DevAuthMiddleware (added in UseApiDefaults) satisfies auth locally in Development.
+            // Replace with AddAuthentication(...).AddJwtBearer(...) when Entra External ID is configured.
+            builder.Services.AddAuthentication();
+
             builder.Services.AddCors(c =>
                 c.AddDefaultPolicy(p =>
                 {
@@ -75,10 +80,8 @@ public static class ApiExtensions
             app.UseExceptionHandler(_ => { });
             app.UseHttpsRedirection();
 
-            // Authentication is intentionally left out of the default pipeline since it requires additional configuration (e.g. JWT, cookies, etc.) that may not be relevant for all APIs
-            // Re-enable this line if your API requires authentication and you've set up the necessary authentication services in AddApiDefaults or elsewhere
-            // app.UseAuthentication();
-
+            app.UseAuthentication();
+            app.UseMiddleware<DevAuthMiddleware>();
             app.UseAuthorization();
 
             app.MapControllers();
