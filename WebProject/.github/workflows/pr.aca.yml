@@ -1,0 +1,385 @@
+name: PR Environment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  statuses: write
+
+env:
+  SLOT: pr${{ github.event.pull_request.number }}
+  DB: sqldb-webprojectazureprefix-pr${{ github.event.pull_request.number }}
+  APP_NAME: app-webprojectazureprefix-api-pr${{ github.event.pull_request.number }}
+
+jobs:
+  deploy:
+    name: Deploy PR environment
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Build ──────────────────────────────────────────────────────────────
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: WebProject.Web/package-lock.json
+
+      - name: Restore
+        run: |
+          for attempt in 1 2 3; do
+            dotnet restore WebProject.slnx && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      - name: Test
+        run: |
+          dotnet test WebProject.slnx \
+            --configuration Release \
+            --no-restore \
+            --filter "FullyQualifiedName!~Integration"
+
+      - name: Publish migration service
+        run: |
+          dotnet publish WebProject.MigrationService/WebProject.MigrationService.csproj \
+            --configuration Release \
+            --output publish/migration \
+            --no-restore
+
+      # ── Azure login ────────────────────────────────────────────────────────
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push PR image
+        run: |
+          az acr login --name crwebprojectazureprefix
+          docker build \
+            -f WebProject.Api/Dockerfile \
+            -t crwebprojectazureprefix.azurecr.io/webproject-api:${{ env.SLOT }}-${{ github.sha }} \
+            .
+          docker push crwebprojectazureprefix.azurecr.io/webproject-api:${{ env.SLOT }}-${{ github.sha }}
+
+      - name: Sync shared + staging config and bootstrap PR feature flags
+        run: |
+          chmod +x config/sync-appconfig.sh
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope shared && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope staging && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope pr --pr-label ${{ env.SLOT }} && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      # ── Provision PR database ──────────────────────────────────────────────
+
+      - name: Create PR database
+        run: |
+          SQL_SERVER=$(az sql server list -g rg-webprojectazureprefix --query "[0].name" -o tsv)
+          SQL_LOCATION=$(az sql server list -g rg-webprojectazureprefix --query "[0].location" -o tsv)
+          az deployment group create \
+            --resource-group rg-webprojectazureprefix \
+            --template-file infra/modules/sql-database.bicep \
+            --parameters \
+                serverName="${SQL_SERVER}" \
+                databaseName=${{ env.DB }} \
+                location="${SQL_LOCATION}" \
+                "tags={\"pr\":\"${{ github.event.pull_request.number }}\",\"managedBy\":\"bicep\"}" \
+            --mode Incremental
+
+      - name: Build and store PR connection string
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          KV=$(az_retry az keyvault list -g rg-webprojectazureprefix \
+            --query "[?tags.environment=='staging'].name" -o tsv)
+          STG_CONN=$(az_retry az keyvault secret show \
+            --vault-name "${KV}" --name sql-connection-string \
+            --query value -o tsv)
+          PR_CONN="${STG_CONN/sqldb-webprojectazureprefix-stg/${{ env.DB }}}"
+          if [ "${PR_CONN}" = "${STG_CONN}" ]; then
+            echo "ERROR: connection string substitution failed — 'sqldb-webprojectazureprefix-stg' not found in staging connection string"
+            exit 1
+          fi
+          echo "::add-mask::${PR_CONN}"
+          az_retry az keyvault secret set \
+            --vault-name "${KV}" \
+            --name "sql-connection-string-${{ env.SLOT }}" \
+            --value "${PR_CONN}" \
+            --output none
+          KV_URI=$(az_retry az keyvault show --name "${KV}" --query properties.vaultUri -o tsv | sed 's|/$||')
+          echo "KV=${KV}" >> $GITHUB_ENV
+          echo "KV_URI=${KV_URI}" >> $GITHUB_ENV
+
+      # ── Migrate PR database ────────────────────────────────────────────────
+
+      - name: Run migrations against PR database
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          PR_CONN=$(az_retry az keyvault secret show \
+            --vault-name "${KV}" \
+            --name "sql-connection-string-${{ env.SLOT }}" \
+            --query value -o tsv)
+          echo "::add-mask::${PR_CONN}"
+          ASPNETCORE_ENVIRONMENT=Staging \
+          ConnectionStrings__DefaultConnection="${PR_CONN}" \
+          dotnet ./publish/migration/WebProject.MigrationService.dll
+
+      # ── Provision PR Container App ─────────────────────────────────────────
+
+      - name: Get managed identity details
+        run: |
+          MI_ID=$(az identity show -g rg-webprojectazureprefix --name id-webprojectazureprefix --query id -o tsv)
+          MI_CLIENT_ID=$(az identity show -g rg-webprojectazureprefix --name id-webprojectazureprefix --query clientId -o tsv)
+          APPCONFIG_ENDPOINT=$(az appconfig list -g rg-webprojectazureprefix \
+            --query "[?tags.environment=='staging'].endpoint | [0]" -o tsv)
+          echo "MI_ID=${MI_ID}" >> $GITHUB_ENV
+          echo "MI_CLIENT_ID=${MI_CLIENT_ID}" >> $GITHUB_ENV
+          echo "APPCONFIG_ENDPOINT=${APPCONFIG_ENDPOINT}" >> $GITHUB_ENV
+
+      - name: Create or update PR Container App
+        run: |
+          PR_SECRET_URI="${KV_URI}/secrets/sql-connection-string-${{ env.SLOT }}"
+
+          PROVISIONING_STATE=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group rg-webprojectazureprefix \
+            --query "properties.provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+          echo "Provisioning state: ${PROVISIONING_STATE}"
+
+          if [ "${PROVISIONING_STATE}" = "Failed" ]; then
+            echo "Container App is in Failed state — deleting before recreating"
+            az containerapp delete \
+              --name ${{ env.APP_NAME }} \
+              --resource-group rg-webprojectazureprefix \
+              --yes
+            PROVISIONING_STATE="NotFound"
+          fi
+
+          if [ "${PROVISIONING_STATE}" != "NotFound" ]; then
+            # Update existing (synchronize event)
+            az containerapp registry set \
+              --name ${{ env.APP_NAME }} \
+              --resource-group rg-webprojectazureprefix \
+              --server crwebprojectazureprefix.azurecr.io \
+              --identity "${MI_ID}" \
+              --output none
+            az containerapp update \
+              --name ${{ env.APP_NAME }} \
+              --resource-group rg-webprojectazureprefix \
+              --image crwebprojectazureprefix.azurecr.io/webproject-api:${{ env.SLOT }}-${{ github.sha }} \
+              --output none
+          else
+            # Create new (opened/reopened/post-delete event)
+            az containerapp create \
+              --name ${{ env.APP_NAME }} \
+              --resource-group rg-webprojectazureprefix \
+              --environment env-webprojectazureprefix-stg \
+              --image crwebprojectazureprefix.azurecr.io/webproject-api:${{ env.SLOT }}-${{ github.sha }} \
+              --user-assigned "${MI_ID}" \
+              --registry-server crwebprojectazureprefix.azurecr.io \
+              --registry-identity "${MI_ID}" \
+              --min-replicas 0 \
+              --max-replicas 3 \
+              --ingress external \
+              --target-port 8080 \
+              --secrets "sql-connection-string=keyvaultref:${PR_SECRET_URI},identityref:${MI_ID}" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Staging" \
+                "AZURE_CLIENT_ID=${MI_CLIENT_ID}" \
+                "AppConfiguration__Endpoint=${APPCONFIG_ENDPOINT}" \
+                "ConnectionStrings__DefaultConnection=secretref:sql-connection-string" \
+                "SLOT_NAME=${{ env.SLOT }}" \
+              --output none
+          fi
+
+      - name: Get PR Container App FQDN
+        id: pr_app
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group rg-webprojectazureprefix \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "fqdn=${FQDN}" >> $GITHUB_OUTPUT
+          echo "url=https://${FQDN}" >> $GITHUB_OUTPUT
+
+      # ── Build and deploy frontend ──────────────────────────────────────────
+
+      - name: Build frontend for PR
+        working-directory: WebProject.Web
+        env:
+          VITE_API_BASE_URL: ${{ steps.pr_app.outputs.url }}
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          npm run build
+
+      - name: Get SWA deployment token
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          TOKEN=$(az_retry az staticwebapp secrets list \
+            --name swa-webprojectazureprefix --resource-group rg-webprojectazureprefix \
+            --query properties.apiKey -o tsv)
+          echo "::add-mask::${TOKEN}"
+          echo "SWA_TOKEN=${TOKEN}" >> $GITHUB_ENV
+
+      - name: Deploy frontend → SWA PR preview
+        id: swa_deploy
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          action: upload
+          app_location: WebProject.Web/dist/client
+          skip_app_build: true
+          deployment_environment: ${{ env.SLOT }}
+
+      - name: Set CORS allowed origin on PR Container App
+        run: |
+          SWA_URL="${{ steps.swa_deploy.outputs.static_web_app_url }}"
+          az containerapp update \
+            --name ${{ env.APP_NAME }} \
+            --resource-group rg-webprojectazureprefix \
+            --set-env-vars "Cors__AllowedOrigins=${SWA_URL}" \
+            --output none
+
+      - name: Comment preview URLs on PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          API_URL="${{ steps.pr_app.outputs.url }}"
+          SWA_URL="${{ steps.swa_deploy.outputs.static_web_app_url }}"
+          BODY="## 🚀 PR Environment Ready
+
+          | | URL |
+          |---|---|
+          | **API** | ${API_URL} |
+          | **Frontend** | ${SWA_URL} |
+
+          > Torn down automatically when this PR is closed."
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --edit-last \
+            --body "${BODY}" \
+          || gh pr comment ${{ github.event.pull_request.number }} \
+            --body "${BODY}"
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## ✅ Deploy PR environment" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deploy PR environment failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check the failed step above. Common causes:" >> $GITHUB_STEP_SUMMARY
+            echo "- **ACA create/update failed**: transient Azure issue — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **AppConfig unavailable**: transient Azure outage — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **Key Vault throttled**: too many requests — re-run the job" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  teardown:
+    name: Teardown PR environment
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/checkout@v4
+
+      - name: Delete PR App Configuration entries
+        run: |
+          chmod +x config/sync-appconfig.sh
+          config/sync-appconfig.sh --scope pr --pr-label ${{ env.SLOT }} --teardown
+
+      - name: Delete PR Container App
+        run: |
+          az containerapp delete \
+            --name ${{ env.APP_NAME }} \
+            --resource-group rg-webprojectazureprefix \
+            --yes || true
+
+      - name: Get SWA deployment token
+        run: |
+          TOKEN=$(az staticwebapp secrets list \
+            --name swa-webprojectazureprefix --resource-group rg-webprojectazureprefix \
+            --query properties.apiKey -o tsv)
+          echo "::add-mask::${TOKEN}"
+          echo "SWA_TOKEN=${TOKEN}" >> $GITHUB_ENV
+
+      - name: Close SWA PR preview
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          action: close
+
+      - name: Delete PR database
+        run: |
+          SQL_SERVER=$(az sql server list -g rg-webprojectazureprefix --query "[0].name" -o tsv)
+          az sql db delete \
+            --resource-group rg-webprojectazureprefix \
+            --server "${SQL_SERVER}" \
+            --name ${{ env.DB }} \
+            --yes || true
+
+      - name: Delete PR connection string secret
+        run: |
+          KV=$(az keyvault list -g rg-webprojectazureprefix \
+            --query "[?tags.environment=='staging'].name" -o tsv) || true
+          if [ -n "${KV}" ]; then
+            az keyvault secret delete \
+              --vault-name "${KV}" \
+              --name "sql-connection-string-${{ env.SLOT }}" || true
+          fi
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## ✅ Teardown PR environment" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Teardown PR environment failed" >> $GITHUB_STEP_SUMMARY
+            echo "Resources can be deleted manually from the Azure portal if needed." >> $GITHUB_STEP_SUMMARY
+          fi

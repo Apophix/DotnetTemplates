@@ -1,0 +1,76 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-infra:
+    name: Deploy infrastructure stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get current container images (preserve on re-runs)
+        id: images
+        run: |
+          PROD_IMAGE=$(az containerapp show \
+            --name app-webprojectazureprefix-api \
+            --resource-group rg-webprojectazureprefix \
+            --query "properties.template.containers[0].image" -o tsv 2>/dev/null \
+            || echo "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest")
+          STG_IMAGE=$(az containerapp show \
+            --name app-webprojectazureprefix-api-stg \
+            --resource-group rg-webprojectazureprefix \
+            --query "properties.template.containers[0].image" -o tsv 2>/dev/null \
+            || echo "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest")
+          echo "prod=${PROD_IMAGE}" >> $GITHUB_OUTPUT
+          echo "stg=${STG_IMAGE}" >> $GITHUB_OUTPUT
+
+      - name: Compile Bicep
+        run: az bicep build --file infra/main.bicep --outfile infra/main.compiled.json
+
+      - name: Deploy infrastructure stack
+        run: |
+          az stack sub create \
+            --name stack-webprojectazureprefix \
+            --location centralus \
+            --template-file infra/main.compiled.json \
+            --parameters \
+              location=centralus \
+              staticWebAppLocation=centralus \
+              sqlAdminLogin=sqladmin \
+              sqlAdminPassword="${{ secrets.AZURE_SQL_ADMIN_PASSWORD }}" \
+              prodContainerImage="${{ steps.images.outputs.prod }}" \
+              stgContainerImage="${{ steps.images.outputs.stg }}" \
+            --deny-settings-mode none \
+            --action-on-unmanage deleteAll \
+            --yes \
+            --output table
+
+      - name: Clean up compiled ARM file
+        if: always()
+        run: rm -f infra/main.compiled.json
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## ✅ Deploy infrastructure" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deploy infrastructure failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check the Bicep compilation and deployment steps above." >> $GITHUB_STEP_SUMMARY
+          fi
