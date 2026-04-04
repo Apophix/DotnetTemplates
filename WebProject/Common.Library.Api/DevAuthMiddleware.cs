@@ -15,7 +15,7 @@ public class DevAuthMiddleware(IConfiguration config, IHostEnvironment env, Requ
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        if (env.IsDevelopment()
+        if (!env.IsProduction()
             && config.GetValue<bool>("Authentication:DevBypass:Enabled")
             && context.User.Identity?.IsAuthenticated != true)
         {
