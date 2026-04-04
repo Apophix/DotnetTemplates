@@ -16,16 +16,32 @@
       "description": "Include Azure App Service infrastructure (Bicep IaC, GitHub Actions CI/CD, config sync scripts).",
       "defaultValue": "false"
     },
+    "UseAzureContainerInfra": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Include Azure Container Apps infrastructure (Bicep IaC, GitHub Actions CI/CD, config sync scripts, bootstrap scripts). Mutually exclusive with UseAzureAppServiceInfra.",
+      "defaultValue": "false"
+    },
     "AzureResourcePrefix": {
       "type": "parameter",
       "datatype": "string",
-      "description": "Short lowercase alphanumeric prefix for Azure resource names (3-10 chars, e.g. 'myapp'). Only used when UseAzureAppServiceInfra is true.",
+      "description": "Short lowercase alphanumeric prefix for Azure resource names (3-10 chars, e.g. 'myapp'). Only used when UseAzureAppServiceInfra or UseAzureContainerInfra is true.",
       "defaultValue": "myapp",
       "replaces": "webprojectazureprefix"
     }
   },
   "sources": [
     {
+      "rename": {
+        "infra/main.aca.bicep": "infra/main.bicep",
+        "infra/main.aca.bicepparam": "infra/main.bicepparam",
+        "infra/deploy.aca.ps1": "infra/deploy.ps1",
+        "infra/deploy.aca.sh": "infra/deploy.sh",
+        "infra/README.aca.md": "infra/README.md",
+        ".github/workflows/deploy.aca.yml": ".github/workflows/deploy.yml",
+        ".github/workflows/pr.aca.yml": ".github/workflows/pr.yml",
+        "config/sync-appconfig.aca.sh": "config/sync-appconfig.sh"
+      },
       "modifiers": [
         {
           "exclude": [
@@ -39,11 +55,45 @@
           ]
         },
         {
-          "condition": "(!UseAzureAppServiceInfra)",
+          "condition": "(!UseAzureAppServiceInfra && !UseAzureContainerInfra)",
           "exclude": [
             ".github/workflows/**",
             "infra/**",
             "config/**"
+          ]
+        },
+        {
+          "condition": "(!UseAzureContainerInfra)",
+          "exclude": [
+            "infra/main.aca.bicep",
+            "infra/main.aca.bicepparam",
+            "infra/deploy.aca.ps1",
+            "infra/deploy.aca.sh",
+            "infra/bootstrap.ps1",
+            "infra/bootstrap.sh",
+            "infra/README.aca.md",
+            "infra/modules/aca-app.bicep",
+            "infra/modules/aca-environment.bicep",
+            "infra/modules/container-registry.bicep",
+            ".github/workflows/deploy.aca.yml",
+            ".github/workflows/pr.aca.yml",
+            ".github/workflows/infra.yml",
+            "config/sync-appconfig.aca.sh",
+            "WebProject.Api/Dockerfile"
+          ]
+        },
+        {
+          "condition": "(!UseAzureAppServiceInfra)",
+          "exclude": [
+            "infra/main.bicep",
+            "infra/main.bicepparam",
+            "infra/deploy.ps1",
+            "infra/deploy.sh",
+            "infra/README.md",
+            "infra/modules/app-service.bicep",
+            ".github/workflows/deploy.yml",
+            ".github/workflows/pr.yml",
+            "config/sync-appconfig.sh"
           ]
         }
       ]
