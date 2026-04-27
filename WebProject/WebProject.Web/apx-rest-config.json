@@ -4,7 +4,7 @@
       "openApiJsonDocumentUrl": "../WebProject.Api/obj/WebProject.Api.json",
       "clientName": "MyApiClient",
       "clientBaseUrlValue": "import.meta.env.VITE_API_BASE_URL",
-      "outputBaseDirectory": "./src/lib/clients",
+      "outputBaseDirectory": "./src/shared/clients",
       "streamedEndpoints": []
     }
   ]

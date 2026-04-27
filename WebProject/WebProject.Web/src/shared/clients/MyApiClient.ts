@@ -2,7 +2,7 @@
 //  AUTO-GENERATED FILE — apx.rest
 //  Do not modify this file directly.
 // -----------------------------------------------------------------------------
-//  Generated on: 2026-04-04T18:45:20.508Z
+//  Generated on: 2026-04-27T00:21:14.041Z
 //  Source OpenAPI document: C:\Sandbox\DotnetTemplates\WebProject\WebProject.Api\obj\WebProject.Api.json
 //  This file will be overwritten on regeneration.
 //

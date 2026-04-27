@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { MyApiClient } from '@/lib/clients/MyApiClient'
+import { MyApiClient } from '@/shared/clients/MyApiClient'
 
 const client = new MyApiClient()
 

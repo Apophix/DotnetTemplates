@@ -1,301 +1,178 @@
-Welcome to your new TanStack app! 
+# WebProject.Web
 
-# Getting Started
+React 19 SPA — the frontend for this template. Built with TanStack Router, TanStack Query, and Tailwind v4. Served as static files; no Node server required.
 
-To run this application:
+---
+
+## Table of contents
+
+1. [Local development](#local-development)
+2. [Aspire + Vite integration](#aspire--vite-integration)
+3. [Rendering modes](#rendering-modes)
+4. [API client](#api-client)
+5. [Folder structure](#folder-structure)
+6. [Scripts](#scripts)
+
+---
+
+## Local development
+
+### With Aspire (recommended)
+
+Start the full stack from the solution root:
 
 ```bash
+dotnet run --project WebProject.AppHost
+```
+
+Aspire starts the API, database, and Vite dev server together. `VITE_API_BASE_URL` is injected automatically — no `.env.local` needed.
+
+### Without Aspire (frontend only)
+
+Copy `.env.example` to `.env.local` and point it at a running API:
+
+```bash
+cp .env.example .env.local
+# Edit VITE_API_BASE_URL=http://localhost:5000
 npm install
 npm run dev
 ```
 
-# Building For Production
+The app runs at `http://localhost:3000` (port set in `vite.config.ts`).
 
-To build this application for production:
+---
+
+## Aspire + Vite integration
+
+`WebProject.AppHost` registers the frontend via `AddViteApp`:
+
+```csharp
+var web = builder.AddViteApp("web", "../WebProject.Web")
+    .WithEndpoint("http", e => e.Port = 5173)
+    .WithEnvironment("VITE_API_BASE_URL", api.GetEndpoint("https"))
+    .WithReference(api);
+```
+
+This does three things:
+
+- Runs `npm run dev` inside `WebProject.Web` as an Aspire resource
+- Injects `VITE_API_BASE_URL` with the API's HTTPS endpoint at startup
+- Shows the frontend in the Aspire dashboard alongside the API and database
+
+`VITE_API_BASE_URL` is consumed by the generated API client (`src/shared/clients/MyApiClient.ts`) as the base URL for all requests. It is the only environment variable the frontend needs.
+
+---
+
+## Rendering modes
+
+This template ships in **SPA mode** — the default and recommended choice for authenticated dashboards, internal tools, and any app where SEO is not a concern.
+
+### SPA mode (default)
+
+`vite.config.ts` has `spa: { enabled: true }` inside `tanstackStart(...)`:
+
+```ts
+tanstackStart({ spa: { enabled: true } })
+```
+
+Output is a fully static bundle deployable to Azure Static Web Apps, S3, Vercel, or any CDN. No Node server required. Server functions and SSR APIs are unavailable in this mode — don't use `createServerFn` or `server:` route handlers.
+
+### SSR (server-side rendering)
+
+Remove `spa: { enabled: true }` from `vite.config.ts` to enable SSR. Individual routes can opt out of SSR with `ssr: false`.
+
+**SSR changes the hosting story.** You need a running Node process, which means:
+- Azure Static Web Apps is no longer viable
+- Use Azure Container Apps, App Service, or Docker instead
+
+Add these packages when switching to SSR (not needed in SPA mode):
 
 ```bash
-npm run build
+npm install @tanstack/react-start @tanstack/react-router-ssr-query
 ```
 
-## Testing
+### Data-only SSR (per route)
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+Set `ssr: 'data-only'` on a route to run its loader server-side while rendering the component client-side. Useful when you only need server-side data fetching on specific routes, without full HTML SSR.
 
-```bash
-npm run test
-```
+### SSG
 
-## Styling
+TanStack Start does not have first-class SSG support yet. For static site generation consider alternatives such as Astro or a pre-rendering step with a tool like `vite-ssg`.
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+---
 
+## API client
 
-## Linting & Formatting
+The API client (`src/shared/clients/MyApiClient.ts`) is **auto-generated** from the backend's OpenAPI spec. Do not edit it manually — changes will be overwritten.
 
+### Regenerate after backend changes
 
-This project uses [eslint](https://eslint.org/) and [prettier](https://prettier.io/) for linting and formatting. Eslint is configured using [tanstack/eslint-config](https://tanstack.com/config/latest/docs/eslint). The following scripts are available:
+1. Build the API to refresh the OpenAPI spec:
 
-```bash
-npm run lint
-npm run format
-npm run check
-```
+   ```bash
+   dotnet build ../WebProject.Api
+   ```
 
+2. Regenerate the client:
 
+   ```bash
+   npx apx-gen
+   ```
 
-## Routing
-This project uses [TanStack Router](https://tanstack.com/router). The initial setup is a file based router. Which means that the routes are managed as files in `src/routes`.
+The generator reads `apx-rest-config.json` and writes to `src/shared/clients/`.
 
-### Adding A Route
+### Usage pattern
 
-To add a new route to your application just add another a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
+Always use the client via `useQuery` / `useMutation` — never call it directly outside a query function:
 
 ```tsx
-import { Link } from "@tanstack/react-router";
-```
+import { useQuery } from '@tanstack/react-query'
+import { MyApiClient } from '@/shared/clients/MyApiClient'
 
-Then anywhere in your JSX you can use it like so:
+const client = new MyApiClient()
 
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you use the `<Outlet />` component.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { Outlet, createRootRoute } from '@tanstack/react-router'
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-
-import { Link } from "@tanstack/react-router";
-
-export const Route = createRootRoute({
-  component: () => (
-    <>
-      <header>
-        <nav>
-          <Link to="/">Home</Link>
-          <Link to="/about">About</Link>
-        </nav>
-      </header>
-      <Outlet />
-      <TanStackRouterDevtools />
-    </>
-  ),
+const { data, isLoading } = useQuery({
+  queryKey: ['resource', id],
+  queryFn: async () => {
+    const [result] = await client.getResource({ id })
+    if (!result) throw new Error('Failed to load')
+    return result
+  },
 })
 ```
 
-The `<TanStackRouterDevtools />` component is not required so you can remove it if you don't want it in your layout.
+---
 
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
+## Folder structure
 
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-const peopleRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/people",
-  loader: async () => {
-    const response = await fetch("https://swapi.dev/api/people");
-    return response.json() as Promise<{
-      results: {
-        name: string;
-      }[];
-    }>;
-  },
-  component: () => {
-    const data = peopleRoute.useLoaderData();
-    return (
-      <ul>
-        {data.results.map((person) => (
-          <li key={person.name}>{person.name}</li>
-        ))}
-      </ul>
-    );
-  },
-});
+```
+src/
+  routes/                  # Pages — one file per route (TanStack Router file-based routing)
+  │  __root.tsx            # Document shell: <html>, QueryClientProvider, devtools
+  │  index.tsx             # Landing page
+  │  demo/
+  │     feature-flags.tsx  # Feature flags reference (real backend integration)
+  │
+  shared/                  # Shared, reusable code
+  │  clients/              # AUTO-GENERATED — do not edit
+  │  hooks/                # Reusable React hooks (e.g. useFeatureFlags)
+  │  lib/                  # Pure utilities (e.g. cn() for class merging)
+  │
+  styles.css               # Global styles + Tailwind import
+  router.tsx               # Router factory
 ```
 
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
+Feature-specific code that grows beyond a single file belongs in `src/modules/[feature]/` — keep components, hooks, and types co-located by feature rather than by type.
 
-### React-Query
+---
 
-React-Query is an excellent addition or alternative to route loading and integrating it into you application is a breeze.
+## Scripts
 
-First add your dependencies:
-
-```bash
-npm install @tanstack/react-query @tanstack/react-query-devtools
-```
-
-Next we'll need to create a query client and provider. We recommend putting those in `main.tsx`.
-
-```tsx
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-// ...
-
-const queryClient = new QueryClient();
-
-// ...
-
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement);
-
-  root.render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  );
-}
-```
-
-You can also add TanStack Query Devtools to the root route (optional).
-
-```tsx
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-
-const rootRoute = createRootRoute({
-  component: () => (
-    <>
-      <Outlet />
-      <ReactQueryDevtools buttonPosition="top-right" />
-      <TanStackRouterDevtools />
-    </>
-  ),
-});
-```
-
-Now you can use `useQuery` to fetch your data.
-
-```tsx
-import { useQuery } from "@tanstack/react-query";
-
-import "./App.css";
-
-function App() {
-  const { data } = useQuery({
-    queryKey: ["people"],
-    queryFn: () =>
-      fetch("https://swapi.dev/api/people")
-        .then((res) => res.json())
-        .then((data) => data.results as { name: string }[]),
-    initialData: [],
-  });
-
-  return (
-    <div>
-      <ul>
-        {data.map((person) => (
-          <li key={person.name}>{person.name}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-export default App;
-```
-
-You can find out everything you need to know on how to use React-Query in the [React-Query documentation](https://tanstack.com/query/latest/docs/framework/react/overview).
-
-## State Management
-
-Another common requirement for React applications is state management. There are many options for state management in React. TanStack Store provides a great starting point for your project.
-
-First you need to add TanStack Store as a dependency:
-
-```bash
-npm install @tanstack/store
-```
-
-Now let's create a simple counter in the `src/App.tsx` file as a demonstration.
-
-```tsx
-import { useStore } from "@tanstack/react-store";
-import { Store } from "@tanstack/store";
-import "./App.css";
-
-const countStore = new Store(0);
-
-function App() {
-  const count = useStore(countStore);
-  return (
-    <div>
-      <button onClick={() => countStore.setState((n) => n + 1)}>
-        Increment - {count}
-      </button>
-    </div>
-  );
-}
-
-export default App;
-```
-
-One of the many nice features of TanStack Store is the ability to derive state from other state. That derived state will update when the base state updates.
-
-Let's check this out by doubling the count using derived state.
-
-```tsx
-import { useStore } from "@tanstack/react-store";
-import { Store, Derived } from "@tanstack/store";
-import "./App.css";
-
-const countStore = new Store(0);
-
-const doubledStore = new Derived({
-  fn: () => countStore.state * 2,
-  deps: [countStore],
-});
-doubledStore.mount();
-
-function App() {
-  const count = useStore(countStore);
-  const doubledCount = useStore(doubledStore);
-
-  return (
-    <div>
-      <button onClick={() => countStore.setState((n) => n + 1)}>
-        Increment - {count}
-      </button>
-      <div>Doubled - {doubledCount}</div>
-    </div>
-  );
-}
-
-export default App;
-```
-
-We use the `Derived` class to create a new store that is derived from another store. The `Derived` class has a `mount` method that will start the derived store updating.
-
-Once we've created the derived store we can use it in the `App` component just like we would any other store using the `useStore` hook.
-
-You can find out everything you need to know on how to use TanStack Store in the [TanStack Store documentation](https://tanstack.com/store/latest).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start Vite dev server on port 3000 |
+| `npm run build` | Generate route tree + production build |
+| `npm run preview` | Preview the production build locally |
+| `npm run test` | Run Vitest tests |
+| `npm run lint` | ESLint |
+| `npm run check` | Prettier + ESLint (auto-fix) |

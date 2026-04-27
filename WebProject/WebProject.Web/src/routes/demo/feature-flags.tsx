@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { MyApiClient } from '@/lib/clients/MyApiClient'
-import { useFeatureFlag, useFeatureFlags } from '@/lib/hooks/use-feature-flags'
+import { MyApiClient } from '@/shared/clients/MyApiClient'
+import { useFeatureFlag, useFeatureFlags } from '@/shared/hooks/use-feature-flags'
 
 export const Route = createFileRoute('/demo/feature-flags')({
   component: FeatureFlagsDemo,
