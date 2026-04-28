@@ -1,0 +1,77 @@
+# Environment variables — copy to .env and set values before running
+# MSSQL_SA_PASSWORD is required; must meet SQL Server complexity rules
+#   (min 8 chars, mix of upper, lower, digit, symbol)
+#
+# Example:
+#   MSSQL_SA_PASSWORD=YourStr0ng!Passw0rd
+
+services:
+
+  # -------------------------------------------------------------------------
+  # SQL Server
+  # -------------------------------------------------------------------------
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in a .env file or shell}"
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql-data:/var/opt/mssql
+    healthcheck:
+      test: >
+        /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa
+        -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # .NET API
+  # Dockerfile context is the repo root so all projects are available to COPY.
+  # -------------------------------------------------------------------------
+  api:
+    build:
+      context: ../..
+      dockerfile: WebProject.Api/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: "http://+:8080"
+      ConnectionStrings__DefaultConnection: >-
+        Server=tcp:db,1433;Initial Catalog=webproject-dev;
+        User ID=sa;Password=${MSSQL_SA_PASSWORD};
+        Encrypt=True;TrustServerCertificate=True;Connection Timeout=30;
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/alive || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # React SPA — built with Vite, served by nginx on port 80.
+  # VITE_API_BASE_URL is baked in at build time. The browser on the host
+  # calls localhost:8080 directly (the exposed API port), not api:8080.
+  # -------------------------------------------------------------------------
+  web:
+    build:
+      context: ../../WebProject.Web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "http://localhost:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+
+volumes:
+  sql-data:

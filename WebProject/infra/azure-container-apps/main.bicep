@@ -45,7 +45,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
 // Shared resources
 // ---------------------------------------------------------------------------
 
-module identity 'modules/managed-identity.bicep' = {
+module identity '../modules/managed-identity.bicep' = {
   name: 'identity'
   scope: rg
   params: {
@@ -55,7 +55,7 @@ module identity 'modules/managed-identity.bicep' = {
   }
 }
 
-module sqlServer 'modules/sql-server.bicep' = {
+module sqlServer '../modules/sql-server.bicep' = {
   name: 'sqlServer'
   scope: rg
   params: {
@@ -67,7 +67,7 @@ module sqlServer 'modules/sql-server.bicep' = {
   }
 }
 
-module sqlDbProd 'modules/sql-database.bicep' = {
+module sqlDbProd '../modules/sql-database.bicep' = {
   name: 'sqlDbProd'
   scope: rg
   params: {
@@ -78,7 +78,7 @@ module sqlDbProd 'modules/sql-database.bicep' = {
   }
 }
 
-module sqlDbStg 'modules/sql-database.bicep' = {
+module sqlDbStg '../modules/sql-database.bicep' = {
   name: 'sqlDbStg'
   scope: rg
   params: {
@@ -90,7 +90,7 @@ module sqlDbStg 'modules/sql-database.bicep' = {
 }
 
 // Two Key Vaults — prod secrets never touch staging/ephemeral environments
-module kvProd 'modules/keyvault.bicep' = {
+module kvProd '../modules/keyvault.bicep' = {
   name: 'kvProd'
   scope: rg
   params: {
@@ -102,7 +102,7 @@ module kvProd 'modules/keyvault.bicep' = {
   }
 }
 
-module kvStg 'modules/keyvault.bicep' = {
+module kvStg '../modules/keyvault.bicep' = {
   name: 'kvStg'
   scope: rg
   params: {
@@ -111,11 +111,10 @@ module kvStg 'modules/keyvault.bicep' = {
     tags: union(tags, { environment: 'staging' })
     managedIdentityPrincipalId: identity.outputs.principalId
     sqlConnectionString: 'Server=tcp:${sqlServer.outputs.serverFqdn},1433;Initial Catalog=${sqlDbStg.outputs.databaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
-    allowSecretWrite: true  // CI/CD writes PR connection strings into the staging KV
   }
 }
 
-module storage 'modules/storage.bicep' = {
+module storage '../modules/storage.bicep' = {
   name: 'storage'
   scope: rg
   params: {
@@ -126,31 +125,7 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
-// Staging store — shared, staging, and PR labels (used by staging + all PR Container Apps)
-module appConfiguration 'modules/app-configuration.bicep' = {
-  name: 'appConfiguration'
-  scope: rg
-  params: {
-    name: 'appconfig-${prefix}-${take(uniqueSuffix, 8)}'
-    location: location
-    tags: union(tags, { environment: 'staging' })
-    managedIdentityPrincipalId: identity.outputs.principalId
-  }
-}
-
-// Production store — production label only; isolated from staging CI writes
-module appConfigurationProd 'modules/app-configuration.bicep' = {
-  name: 'appConfigurationProd'
-  scope: rg
-  params: {
-    name: 'appconfig-${prefix}-prod-${take(uniqueSuffix, 8)}'
-    location: location
-    tags: union(tags, { environment: 'production' })
-    managedIdentityPrincipalId: identity.outputs.principalId
-  }
-}
-
-module acr 'modules/container-registry.bicep' = {
+module acr '../modules/container-registry.bicep' = {
   name: 'containerRegistry'
   scope: rg
   params: {
@@ -161,7 +136,7 @@ module acr 'modules/container-registry.bicep' = {
   }
 }
 
-module acaEnvProd 'modules/aca-environment.bicep' = {
+module acaEnvProd '../modules/aca-environment.bicep' = {
   name: 'acaEnvProd'
   scope: rg
   params: {
@@ -171,7 +146,7 @@ module acaEnvProd 'modules/aca-environment.bicep' = {
   }
 }
 
-module acaEnvStg 'modules/aca-environment.bicep' = {
+module acaEnvStg '../modules/aca-environment.bicep' = {
   name: 'acaEnvStg'
   scope: rg
   params: {
@@ -181,7 +156,7 @@ module acaEnvStg 'modules/aca-environment.bicep' = {
   }
 }
 
-module acaAppProd 'modules/aca-app.bicep' = {
+module acaAppProd '../modules/aca-app.bicep' = {
   name: 'acaAppProd'
   scope: rg
   params: {
@@ -193,7 +168,6 @@ module acaAppProd 'modules/aca-app.bicep' = {
     managedIdentityId: identity.outputs.resourceId
     managedIdentityClientId: identity.outputs.clientId
     aspnetcoreEnvironment: 'Production'
-    appConfigurationEndpoint: appConfigurationProd.outputs.endpoint
     sqlConnectionStringSecretUri: kvProd.outputs.sqlConnectionStringSecretUri
     acrLoginServer: acr.outputs.loginServer
     minReplicas: 1
@@ -202,7 +176,7 @@ module acaAppProd 'modules/aca-app.bicep' = {
   dependsOn: [kvProd]
 }
 
-module acaAppStg 'modules/aca-app.bicep' = {
+module acaAppStg '../modules/aca-app.bicep' = {
   name: 'acaAppStg'
   scope: rg
   params: {
@@ -214,7 +188,6 @@ module acaAppStg 'modules/aca-app.bicep' = {
     managedIdentityId: identity.outputs.resourceId
     managedIdentityClientId: identity.outputs.clientId
     aspnetcoreEnvironment: 'Staging'
-    appConfigurationEndpoint: appConfiguration.outputs.endpoint
     sqlConnectionStringSecretUri: kvStg.outputs.sqlConnectionStringSecretUri
     acrLoginServer: acr.outputs.loginServer
     minReplicas: 0
@@ -223,7 +196,7 @@ module acaAppStg 'modules/aca-app.bicep' = {
   dependsOn: [kvStg]
 }
 
-module staticWebApp 'modules/static-web-app.bicep' = {
+module staticWebApp '../modules/static-web-app.bicep' = {
   name: 'staticWebApp'
   scope: rg
   params: {
@@ -245,7 +218,5 @@ output webUrl string = 'https://${staticWebApp.outputs.defaultHostname}'
 output staticWebAppName string = staticWebApp.outputs.name
 output prodKeyVaultName string = kvProd.outputs.name
 output stagingKeyVaultName string = kvStg.outputs.name
-output prodAppConfigStoreName string = appConfigurationProd.outputs.name
-output stagingAppConfigStoreName string = appConfiguration.outputs.name
 output sqlServerFqdn string = sqlServer.outputs.serverFqdn
 output managedIdentityClientId string = identity.outputs.clientId

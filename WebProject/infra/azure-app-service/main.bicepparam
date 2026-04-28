@@ -11,6 +11,6 @@ param sqlAdminLogin = 'sqladmin'
 param appServicePlanSku = { name: 'S1', tier: 'Standard', capacity: 1 }
 
 // sqlAdminPassword must be passed at deploy time:
-//   ./infra/deploy.ps1
+//   ./infra/azure-app-service/deploy.ps1
 // or
-//   ./infra/deploy.sh
+//   ./infra/azure-app-service/deploy.sh

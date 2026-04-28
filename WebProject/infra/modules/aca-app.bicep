@@ -22,9 +22,6 @@ param managedIdentityClientId string
 @description('ASPNETCORE_ENVIRONMENT value.')
 param aspnetcoreEnvironment string
 
-@description('App Configuration endpoint URL.')
-param appConfigurationEndpoint string
-
 @description('Key Vault URI for the SQL connection string secret (versionless).')
 param sqlConnectionStringSecretUri string
 
@@ -90,7 +87,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             [
               { name: 'ASPNETCORE_ENVIRONMENT', value: aspnetcoreEnvironment }
               { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-              { name: 'AppConfiguration__Endpoint', value: appConfigurationEndpoint }
               { name: 'ConnectionStrings__DefaultConnection', secretRef: 'sql-connection-string' }
             ],
             corsAllowedOrigins != '' ? [{ name: 'Cors__AllowedOrigins', value: corsAllowedOrigins }] : []

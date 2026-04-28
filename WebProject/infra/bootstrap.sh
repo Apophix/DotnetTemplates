@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# WebProject — One-time bootstrap for container-based infrastructure.
+# WebProject — One-time bootstrap for Azure infrastructure.
 #
-# Run this ONCE before the first CI/CD deployment. After this, infra.yml
-# handles all infrastructure changes automatically.
+# Run this ONCE before the first deployment. Registers resource providers,
+# sets GitHub secrets, and deploys the initial infrastructure stack.
 #
 # Prerequisites:
 #   - az CLI installed and logged in (az login) with Contributor on the subscription
@@ -10,22 +10,35 @@
 #   - Bicep extension: az bicep install
 #
 # Usage:
-#   ./infra/bootstrap.sh [--location <region>]
+#   ./infra/bootstrap.sh --variant <app-service|container-apps> [--location <region>]
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCATION="centralus"
+VARIANT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --variant)  VARIANT="$2"; shift 2 ;;
     --location) LOCATION="$2"; shift 2 ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
 done
 
+if [[ -z "$VARIANT" ]]; then
+  echo "ERROR: --variant is required (app-service or container-apps)" >&2
+  exit 1
+fi
+
+if [[ "$VARIANT" != "app-service" && "$VARIANT" != "container-apps" ]]; then
+  echo "ERROR: --variant must be 'app-service' or 'container-apps'" >&2
+  exit 1
+fi
+
 echo "WebProject Bootstrap"
 echo "===================="
+echo "Variant : ${VARIANT}"
 echo "Location: ${LOCATION}"
 echo ""
 
@@ -71,6 +84,7 @@ echo ""
 # ── Register required resource providers ─────────────────────────────────────
 
 echo "Registering required Azure resource providers..."
+az provider register -n Microsoft.Web --wait
 az provider register -n Microsoft.App --wait
 az provider register -n Microsoft.ContainerRegistry --wait
 echo "✓ Resource providers registered"
@@ -78,7 +92,13 @@ echo ""
 
 # ── Compile and deploy Bicep ──────────────────────────────────────────────────
 
-BICEP_FILE="${SCRIPT_DIR}/main.bicep"
+if [[ "$VARIANT" == "app-service" ]]; then
+  VARIANT_DIR="azure-app-service"
+else
+  VARIANT_DIR="azure-container-apps"
+fi
+
+BICEP_FILE="${SCRIPT_DIR}/${VARIANT_DIR}/main.bicep"
 ARM_FILE="${BICEP_FILE%.bicep}.compiled.json"
 trap 'rm -f "$ARM_FILE"' EXIT
 
@@ -98,7 +118,7 @@ az stack sub create \
     sqlAdminLogin=sqladmin \
     sqlAdminPassword="${SQL_ADMIN_PASSWORD}" \
   --deny-settings-mode none \
-  --action-on-unmanage deleteAll \
+  --action-on-unmanage detachAll \
   --yes \
   --output table
 

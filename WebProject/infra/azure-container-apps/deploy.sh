@@ -4,7 +4,7 @@
 # which owns rg-webprojectazureprefix and all resources within it.
 #
 # Usage:
-#   ./infra/deploy.sh [--location <region>] [--what-if]
+#   ./infra/azure-container-apps/deploy.sh [--location <region>] [--what-if]
 #
 # Options:
 #   --location <region>   Azure region (default: centralus)
@@ -98,7 +98,7 @@ else
     --template-file "$ARM_FILE" \
     --parameters "${PARAMS[@]}" \
     --deny-settings-mode none \
-    --action-on-unmanage deleteAll \
+    --action-on-unmanage detachAll \
     --yes \
     --output table
 fi

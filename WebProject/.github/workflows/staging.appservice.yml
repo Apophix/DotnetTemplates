@@ -1,0 +1,444 @@
+name: Staging (App Service)
+
+# Merges all currently open PRs into main, builds the combined result, migrates
+# the staging database, and deploys to the shared staging environment.
+#
+# Nightly wipe-and-rebuild lives in staging-nuke.appservice.yml.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  statuses: write
+
+# ── Repository variables used by this workflow ────────────────────────────────
+#
+# Create these in Settings → Secrets and variables → Actions → Variables:
+#
+#   STAGING_API_URL        The base URL of the staging API (used when building the
+#                          frontend so VITE_API_BASE_URL is baked into the SPA bundle).
+#                          Option A example: https://app-<prefix>-api-staging.azurewebsites.net
+#                          Option B example: https://app-<prefix>-api-stg.azurewebsites.net
+#
+#   STAGING_RESOURCE_GROUP Azure resource group containing the staging resources.
+#
+#   STAGING_APPSERVICE_NAME
+#                          Option A: the App Service that owns the staging slot
+#                                    (same App Service as production).
+#                          Option B: the dedicated staging App Service name.
+#
+#   STAGING_SWA_NAME       The Azure Static Web App name (shared between environments).
+#
+#   STAGING_SQL_SERVER     Azure SQL Server name (without .database.windows.net).
+#                          Example: sql-myapp-staging
+#
+#   STAGING_SQL_DB_NAME    Azure SQL database name.
+#                          Example: sqldb-myapp-staging
+#
+# Repository secrets (Settings → Secrets and variables → Actions → Secrets):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   (same as deploy workflow)
+#
+# ── SQL access for the GitHub Actions service principal ───────────────────────
+#
+# The service principal identified by AZURE_CLIENT_ID must be granted access to the
+# staging SQL database. Run once against the staging database:
+#
+#   CREATE USER [<service-principal-display-name>] FROM EXTERNAL PROVIDER;
+#   ALTER ROLE db_owner ADD MEMBER [<service-principal-display-name>];
+#
+# The SQL Server must also have "Azure AD authentication only" or mixed-mode
+# authentication enabled (Azure Portal → SQL Server → Microsoft Entra ID).
+# No connection-string secrets are used — authentication uses the OIDC token
+# acquired by azure/login above.
+
+jobs:
+  # ── Normal path: Merge open PRs into main, then build ─────────────────────
+
+  merge-and-build:
+    name: Merge open PRs & build
+    runs-on: ubuntu-latest
+    outputs:
+      included: ${{ steps.merge.outputs.included }}
+      skipped: ${{ steps.merge.outputs.skipped }}
+    steps:
+      # Always start from the latest main, regardless of which PR triggered this run.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Merge open PRs (oldest first, skip conflicts)
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          INCLUDED=()
+          SKIPPED=()
+
+          while IFS= read -r PR_JSON; do
+            [ -z "$PR_JSON" ] && continue
+            PR_NUM=$(echo "$PR_JSON" | jq -r '.number')
+            PR_BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
+            PR_SHA=$(echo "$PR_JSON" | jq -r '.headSha')
+
+            echo "── Merging PR #${PR_NUM}: ${PR_BRANCH} ──"
+            git fetch origin "${PR_BRANCH}" 2>/dev/null || {
+              echo "⚠️ Could not fetch ${PR_BRANCH} — skipping"
+              SKIPPED+=("${PR_NUM}")
+              gh api "repos/${{ github.repository }}/statuses/${PR_SHA}" \
+                -f state=failure \
+                -f description="Branch could not be fetched for staging merge" \
+                -f context="Staging / merge" --silent || true
+              continue
+            }
+
+            if git merge --no-commit --no-ff FETCH_HEAD 2>/dev/null; then
+              git commit -m "Merge PR #${PR_NUM} (${PR_BRANCH}) into staging" --allow-empty
+              INCLUDED+=("${PR_NUM}")
+              echo "✅ PR #${PR_NUM} included"
+            else
+              git merge --abort
+              SKIPPED+=("${PR_NUM}")
+              echo "⚠️ PR #${PR_NUM} skipped — merge conflict"
+              gh api "repos/${{ github.repository }}/statuses/${PR_SHA}" \
+                -f state=failure \
+                -f description="Merge conflict with main or another included PR" \
+                -f context="Staging / merge" --silent || true
+            fi
+          done < <(gh pr list --state open --base main \
+            --json number,headRefName,createdAt,headSha \
+            --jq 'sort_by(.createdAt) | .[] | @json')
+
+          # Output PR lists as JSON arrays of integers
+          INCLUDED_JSON=$(printf '%s\n' "${INCLUDED[@]:-}" \
+            | grep -v '^$' | jq -Rsc '[.[] | split("\n") | .[] | select(. != "") | tonumber]' \
+            || echo '[]')
+          SKIPPED_JSON=$(printf '%s\n' "${SKIPPED[@]:-}" \
+            | grep -v '^$' | jq -Rsc '[.[] | split("\n") | .[] | select(. != "") | tonumber]' \
+            || echo '[]')
+          echo "included=${INCLUDED_JSON}" >> $GITHUB_OUTPUT
+          echo "skipped=${SKIPPED_JSON}" >> $GITHUB_OUTPUT
+          echo "Included PRs: ${INCLUDED_JSON}"
+          echo "Skipped PRs:  ${SKIPPED_JSON}"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: WebProject.Web/package-lock.json
+
+      - name: Restore
+        run: |
+          for attempt in 1 2 3; do
+            dotnet restore WebProject.slnx && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      - name: Test
+        run: |
+          dotnet test WebProject.slnx \
+            --configuration Release \
+            --no-restore \
+            --filter "FullyQualifiedName!~Integration"
+
+      - name: Publish API
+        run: |
+          dotnet publish WebProject.Api/WebProject.Api.csproj \
+            --configuration Release \
+            --output publish/api \
+            --no-restore
+
+      - name: Publish migration service
+        run: |
+          dotnet publish WebProject.MigrationService/WebProject.MigrationService.csproj \
+            --configuration Release \
+            --output publish/migration \
+            --no-restore
+
+      - name: Build frontend
+        working-directory: WebProject.Web
+        env:
+          # STAGING_API_URL is a repository variable — set it in Settings → Variables.
+          VITE_API_BASE_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          npm run build
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Migrations run here — in the same job as the build — because the merged
+      # git state (main + all open PRs) only exists on this runner. There's no
+      # persistent branch to check out in a downstream job, so there's no reason
+      # to upload the migration binary as an artifact just to run it elsewhere.
+      - name: Run migrations against staging database
+        id: migrate
+        run: |
+          # Authenticate to SQL via the service principal — no connection-string secret needed.
+          # Microsoft.Data.SqlClient resolves 'Active Directory Default' through
+          # DefaultAzureCredential → AzureCliCredential (set up by azure/login above).
+          CONN="Server=tcp:${{ vars.STAGING_SQL_SERVER }}.database.windows.net,1433;Database=${{ vars.STAGING_SQL_DB_NAME }};Authentication=Active Directory Default;Encrypt=True;"
+          ASPNETCORE_ENVIRONMENT=Staging \
+          ConnectionStrings__DefaultConnection="${CONN}" \
+          dotnet ./publish/migration/WebProject.MigrationService.dll 2>&1 | tee /tmp/migration.log
+          exit ${PIPESTATUS[0]}
+
+      # Only the triggering PR is notified on failure. Previous PRs have already had their
+      # migrations applied on their own pipeline runs — the staging DB has those applied.
+      # If migration fails now, only this PR's new migrations are candidates for the failure.
+      - name: Post migration failure to triggering PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const migrationLog = require('fs').readFileSync('/tmp/migration.log', 'utf8').slice(-3000);
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                '## ❌ Staging migration failed',
+                '',
+                'The EF migrations introduced by this PR failed against the staging database.',
+                `[View workflow run](${runUrl})`,
+                '',
+                '<details><summary>Migration output (last 3 000 chars)</summary>',
+                '',
+                '```',
+                migrationLog,
+                '```',
+                '',
+                '</details>',
+                '',
+                '_The staging database may be in a partially-migrated state. The nightly wipe will restore a clean baseline._',
+              ].join('\n'),
+            });
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: api
+          path: publish/api
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: web
+          path: WebProject.Web/dist/client
+
+  # ── Deploy to staging environment ─────────────────────────────────────────
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: merge-and-build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: api
+          path: ./api
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: ./web
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sync App Configuration (shared + staging scopes)
+        run: |
+          chmod +x config/sync-appconfig.sh
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope shared && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+          for attempt in 1 2 3; do
+            config/sync-appconfig.sh --scope staging && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      # ── CONFIGURE: Choose your App Service deployment arrangement ────────────
+      #
+      # Pick ONE option and delete the other. Your choice must match the production
+      # deploy step in deploy.appservice.yml (staging and production should mirror).
+      #
+      # OPTION A — Deployment slot
+      #   Staging is a slot named 'staging' on the production App Service.
+      #   Required variable: STAGING_APPSERVICE_NAME (same App Service as production)
+      #
+      # OPTION B — Separate App Service resource
+      #   Staging is a dedicated App Service instance.
+      #   Required variable: STAGING_APPSERVICE_NAME (name of the dedicated staging App Service)
+      #
+      # ────────────────────────────────────────────────────────────────────────
+
+      # OPTION A — Deploy API to staging slot
+      - name: Deploy API → staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.STAGING_APPSERVICE_NAME }}
+          slot-name: staging
+          package: ./api
+
+      # OPTION B — Deploy API to dedicated staging App Service (uncomment to use)
+      # - name: Deploy API → staging App Service
+      #   uses: azure/webapps-deploy@v3
+      #   with:
+      #     app-name: ${{ vars.STAGING_APPSERVICE_NAME }}
+      #     package: ./api
+
+      - name: Get SWA deployment token
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          TOKEN=$(az_retry az staticwebapp secrets list \
+            --name ${{ vars.STAGING_SWA_NAME }} \
+            --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+            --query properties.apiKey -o tsv)
+          echo "::add-mask::${TOKEN}"
+          echo "SWA_TOKEN=${TOKEN}" >> $GITHUB_ENV
+
+      - name: Deploy frontend → SWA staging environment
+        id: swa_deploy
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          action: upload
+          app_location: ./web
+          skip_app_build: true
+          deployment_environment: staging
+
+      # Set CORS on the API to the SWA staging URL.
+      # Must match whichever Option (A or B) you chose for the API deploy above.
+
+      # OPTION A — Set CORS on staging slot
+      - name: Set CORS on staging slot
+        run: |
+          for i in {1..6}; do
+            az webapp config appsettings set \
+              --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+              --name ${{ vars.STAGING_APPSERVICE_NAME }} \
+              --slot staging \
+              --settings "Cors__AllowedOrigins=${{ steps.swa_deploy.outputs.static_web_app_url }}" \
+              --output none && exit 0
+            echo "Attempt $i/6 failed (slot busy) — retrying in 15s..."
+            sleep 15
+          done
+          exit 1
+
+      # OPTION B — Set CORS on dedicated staging App Service (uncomment to use)
+      # - name: Set CORS on staging App Service
+      #   run: |
+      #     for i in {1..6}; do
+      #       az webapp config appsettings set \
+      #         --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+      #         --name ${{ vars.STAGING_APPSERVICE_NAME }} \
+      #         --settings "Cors__AllowedOrigins=${{ steps.swa_deploy.outputs.static_web_app_url }}" \
+      #         --output none && exit 0
+      #       echo "Attempt $i/6 failed — retrying in 15s..."
+      #       sleep 15
+      #     done
+      #     exit 1
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## ✅ Deploy to staging" >> $GITHUB_STEP_SUMMARY
+            echo "Staging URL: ${{ steps.swa_deploy.outputs.static_web_app_url }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deploy to staging failed" >> $GITHUB_STEP_SUMMARY
+            echo "Common causes:" >> $GITHUB_STEP_SUMMARY
+            echo "- **Slot 409 Conflict**: slot is still processing a previous operation — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **AppConfig unavailable**: transient Azure outage — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **Key Vault throttled**: too many requests — re-run the job" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ── Notify open PRs of staging status ─────────────────────────────────────
+
+  notify-prs:
+    name: Notify PRs
+    needs: [merge-and-build, deploy-staging]
+    runs-on: ubuntu-latest
+    if: always() && needs.merge-and-build.result != 'skipped'
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          INCLUDED_PRS: ${{ needs.merge-and-build.outputs.included }}
+          SKIPPED_PRS: ${{ needs.merge-and-build.outputs.skipped }}
+          DEPLOY_RESULT: ${{ needs.deploy-staging.result }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const included = JSON.parse(process.env.INCLUDED_PRS || '[]');
+            const skipped = JSON.parse(process.env.SKIPPED_PRS || '[]');
+            const deployResult = process.env.DEPLOY_RESULT;
+            const runUrl = process.env.RUN_URL;
+
+            for (const prNum of included) {
+              const ok = deployResult === 'success';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNum,
+                body: ok
+                  ? `## ✅ Included in staging\n\nThis PR is included in the current staging build.\n[View workflow run](${runUrl})`
+                  : `## ⚠️ Staging deployment failed\n\nThis PR was included in the staging merge but the deployment failed.\n[View workflow run](${runUrl})`,
+              });
+            }
+
+            for (const prNum of skipped) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNum,
+                body: [
+                  '## ⚠️ Skipped in staging',
+                  '',
+                  'This PR was skipped in the latest staging build due to a merge conflict with `main` or another included PR.',
+                  '',
+                  'Resolve the conflict and push to your branch — the next staging build will pick it up automatically.',
+                  `[View workflow run](${runUrl})`,
+                ].join('\n'),
+              });
+            }
+
+  # ── Nightly wipe-and-rebuild ──────────────────────────────────────────────
+  #
+  # Defined in staging-nuke.appservice.yml

@@ -1,19 +1,26 @@
 <#
 .SYNOPSIS
-    WebProject — One-time bootstrap for container-based infrastructure.
+    WebProject — One-time bootstrap for Azure infrastructure.
 
 .DESCRIPTION
-    Run this ONCE before the first CI/CD deployment. After this, infra.yml
-    handles all infrastructure changes automatically.
+    Run this ONCE before the first deployment. Registers resource providers,
+    sets GitHub secrets, and deploys the initial infrastructure stack.
+
+.PARAMETER Variant
+    Which hosting option to deploy: AppService or ContainerApps.
 
 .PARAMETER Location
     Azure region to deploy to (default: centralus).
 
 .EXAMPLE
-    .\infra\bootstrap.ps1
-    .\infra\bootstrap.ps1 -Location westus2
+    .\infra\bootstrap.ps1 -Variant AppService
+    .\infra\bootstrap.ps1 -Variant ContainerApps -Location westus2
 #>
 param(
+    [Parameter(Mandatory)]
+    [ValidateSet('AppService', 'ContainerApps')]
+    [string]$Variant,
+
     [string]$Location = 'centralus'
 )
 
@@ -24,6 +31,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 Write-Host "WebProject Bootstrap" -ForegroundColor Cyan
 Write-Host "====================" -ForegroundColor Cyan
+Write-Host "Variant : $Variant"
 Write-Host "Location: $Location"
 Write-Host ""
 
@@ -78,6 +86,7 @@ Write-Host ""
 # ── Register required resource providers ─────────────────────────────────────
 
 Write-Host "Registering required Azure resource providers..."
+az provider register -n Microsoft.Web --wait
 az provider register -n Microsoft.App --wait
 az provider register -n Microsoft.ContainerRegistry --wait
 Write-Host "✓ Resource providers registered"
@@ -85,8 +94,9 @@ Write-Host ""
 
 # ── Compile and deploy Bicep ──────────────────────────────────────────────────
 
-$bicepFile = Join-Path $scriptDir 'main.bicep'
-$armFile   = Join-Path $scriptDir 'main.compiled.json'
+$variantDir = if ($Variant -eq 'AppService') { 'azure-app-service' } else { 'azure-container-apps' }
+$bicepFile = Join-Path $scriptDir "$variantDir\main.bicep"
+$armFile   = Join-Path $scriptDir "$variantDir\main.compiled.json"
 
 try {
     Write-Host "Compiling Bicep..."
@@ -106,7 +116,7 @@ try {
             sqlAdminLogin=sqladmin `
             "sqlAdminPassword=$SqlAdminPassword" `
         --deny-settings-mode none `
-        --action-on-unmanage deleteAll `
+        --action-on-unmanage detachAll `
         --yes `
         --output table
 

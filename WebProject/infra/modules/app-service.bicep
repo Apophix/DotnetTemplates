@@ -25,9 +25,6 @@ param prodKeyVaultName string
 @description('Key Vault name for the staging slot (and all ephemeral PR slots).')
 param stagingKeyVaultName string
 
-@description('App Configuration endpoint URL.')
-param appConfigurationEndpoint string
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -44,20 +41,17 @@ var commonSettings = [
 var prodApiSettings = concat(commonSettings, [
   { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
   { name: 'ConnectionStrings__DefaultConnection', value: kvRef(prodKeyVaultName, 'sql-connection-string') }
-  { name: 'AppConfiguration__Endpoint', value: appConfigurationEndpoint }
 ])
 
 var stagingApiSettings = concat(commonSettings, [
   { name: 'ASPNETCORE_ENVIRONMENT', value: 'Staging' }
   { name: 'ConnectionStrings__DefaultConnection', value: kvRef(stagingKeyVaultName, 'sql-connection-string') }
-  { name: 'AppConfiguration__Endpoint', value: appConfigurationEndpoint }
 ])
 
 // Settings that must not travel with swapped content
 var stickyApiSettingNames = [
   'ASPNETCORE_ENVIRONMENT'
   'ConnectionStrings__DefaultConnection'
-  'AppConfiguration__Endpoint'
 ]
 
 // ---------------------------------------------------------------------------

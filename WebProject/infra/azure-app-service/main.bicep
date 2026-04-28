@@ -42,7 +42,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
 // Shared resources
 // ---------------------------------------------------------------------------
 
-module identity 'modules/managed-identity.bicep' = {
+module identity '../modules/managed-identity.bicep' = {
   name: 'identity'
   scope: rg
   params: {
@@ -52,7 +52,7 @@ module identity 'modules/managed-identity.bicep' = {
   }
 }
 
-module sqlServer 'modules/sql-server.bicep' = {
+module sqlServer '../modules/sql-server.bicep' = {
   name: 'sqlServer'
   scope: rg
   params: {
@@ -64,7 +64,7 @@ module sqlServer 'modules/sql-server.bicep' = {
   }
 }
 
-module sqlDbProd 'modules/sql-database.bicep' = {
+module sqlDbProd '../modules/sql-database.bicep' = {
   name: 'sqlDbProd'
   scope: rg
   params: {
@@ -75,7 +75,7 @@ module sqlDbProd 'modules/sql-database.bicep' = {
   }
 }
 
-module sqlDbStg 'modules/sql-database.bicep' = {
+module sqlDbStg '../modules/sql-database.bicep' = {
   name: 'sqlDbStg'
   scope: rg
   params: {
@@ -87,7 +87,7 @@ module sqlDbStg 'modules/sql-database.bicep' = {
 }
 
 // Two Key Vaults — prod secrets never touch staging/ephemeral environments
-module kvProd 'modules/keyvault.bicep' = {
+module kvProd '../modules/keyvault.bicep' = {
   name: 'kvProd'
   scope: rg
   params: {
@@ -99,7 +99,7 @@ module kvProd 'modules/keyvault.bicep' = {
   }
 }
 
-module kvStg 'modules/keyvault.bicep' = {
+module kvStg '../modules/keyvault.bicep' = {
   name: 'kvStg'
   scope: rg
   params: {
@@ -108,11 +108,10 @@ module kvStg 'modules/keyvault.bicep' = {
     tags: union(tags, { environment: 'staging' })
     managedIdentityPrincipalId: identity.outputs.principalId
     sqlConnectionString: 'Server=tcp:${sqlServer.outputs.serverFqdn},1433;Initial Catalog=${sqlDbStg.outputs.databaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
-    allowSecretWrite: true  // CI/CD writes PR connection strings into the staging KV
   }
 }
 
-module storage 'modules/storage.bicep' = {
+module storage '../modules/storage.bicep' = {
   name: 'storage'
   scope: rg
   params: {
@@ -123,18 +122,7 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
-module appConfiguration 'modules/app-configuration.bicep' = {
-  name: 'appConfiguration'
-  scope: rg
-  params: {
-    name: 'appconfig-${prefix}-${take(uniqueSuffix, 8)}'
-    location: location
-    tags: tags
-    managedIdentityPrincipalId: identity.outputs.principalId
-  }
-}
-
-module appService 'modules/app-service.bicep' = {
+module appService '../modules/app-service.bicep' = {
   name: 'appService'
   scope: rg
   params: {
@@ -147,11 +135,10 @@ module appService 'modules/app-service.bicep' = {
     managedIdentityClientId: identity.outputs.clientId
     prodKeyVaultName: kvProd.outputs.name
     stagingKeyVaultName: kvStg.outputs.name
-    appConfigurationEndpoint: appConfiguration.outputs.endpoint
   }
 }
 
-module staticWebApp 'modules/static-web-app.bicep' = {
+module staticWebApp '../modules/static-web-app.bicep' = {
   name: 'staticWebApp'
   scope: rg
   params: {

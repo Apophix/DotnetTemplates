@@ -30,4 +30,13 @@ resource database 'Microsoft.Sql/servers/databases@2023-05-01-preview' = {
   }
 }
 
+resource databaseLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  name: '${databaseName}-lock'
+  scope: database
+  properties: {
+    level: 'CanNotDelete'
+    notes: 'Prevent accidental deletion of SQL database.'
+  }
+}
+
 output databaseName string = database.name

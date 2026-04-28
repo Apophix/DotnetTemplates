@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Deploys all WebProject infrastructure to Azure using a Deployment Stack.
+    Deploys all WebProject container infrastructure to Azure using a Deployment Stack.
     Creates/updates the stack-webprojectazureprefix deployment stack at subscription scope,
     which owns rg-webprojectazureprefix and all resources within it.
-    Run from the repo root or the infra/ directory.
+    Run from the repo root or the infra/azure-container-apps/ directory.
 
 .PARAMETER Location
     Azure region. Defaults to 'centralus'.
@@ -16,10 +16,10 @@
     Runs az stack sub validate instead of creating/updating the stack.
 
 .EXAMPLE
-    ./infra/deploy.ps1
+    ./infra/azure-container-apps/deploy.ps1
 
 .EXAMPLE
-    ./infra/deploy.ps1 -WhatIf
+    ./infra/azure-container-apps/deploy.ps1 -WhatIf
 #>
 
 [CmdletBinding()]
@@ -75,13 +75,13 @@ $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
 Debug-Log "Location           : $Location"
 Debug-Log "WhatIf             : $WhatIf"
 
-# Resolve the infra directory regardless of where the script is called from
+# Resolve the script directory regardless of where the script is called from
 $scriptDir = Split-Path $MyInvocation.MyCommand.Path
 $bicepFile = (Resolve-Path (Join-Path $scriptDir 'main.bicep')).Path
 $armFile   = [IO.Path]::ChangeExtension($bicepFile, '.compiled.json')
 
 Debug-Log "main.bicep         : $bicepFile"
-Debug-Log "modules/ exists    : $(Test-Path (Join-Path $scriptDir 'modules'))"
+Debug-Log "../modules/ exists : $(Test-Path (Join-Path $scriptDir '..\modules'))"
 
 # Compile Bicep -> ARM JSON using the working az bicep path.
 # az stack sub create invokes the Bicep compiler through a different internal
@@ -108,7 +108,7 @@ try {
             --output table
     }
     else {
-        Write-Host 'Deploying WebProject infrastructure...' -ForegroundColor Cyan
+        Write-Host 'Deploying WebProject container infrastructure...' -ForegroundColor Cyan
 
         & $pythonExe -IBm azure.cli stack sub create `
             --name stack-webprojectazureprefix `
@@ -116,7 +116,7 @@ try {
             --template-file $armFile `
             --parameters "location=$Location" "staticWebAppLocation=$Location" sqlAdminLogin=sqladmin "sqlAdminPassword=$plainPassword" `
             --deny-settings-mode none `
-            --action-on-unmanage deleteAll `
+            --action-on-unmanage detachAll `
             --yes `
             --output table
     }
