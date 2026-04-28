@@ -11,6 +11,9 @@ appsettings.local.json
 appsettings.Staging.json
 appsettings.Production.json
 
+# Local dev hydration config — contains project-specific Key Vault name, not committed
+config/hydrate.config.json
+
 # User-specific files
 *.rsuser
 *.suo

@@ -89,7 +89,25 @@ if ($webDir) {
     }
 }
 
-# ── 5. User secrets check ─────────────────────────────────────────────────────
+# ── 5. Backend appsettings.local.json ────────────────────────────────────────
+Write-Host "`nBackend local configuration..." -ForegroundColor White
+$apiDir = Get-ChildItem $root -Directory |
+    Where-Object { Test-Path "$($_.FullName)/appsettings.local.json.example" } |
+    Select-Object -First 1
+if ($apiDir) {
+    $localJson   = "$($apiDir.FullName)/appsettings.local.json"
+    $exampleJson = "$($apiDir.FullName)/appsettings.local.json.example"
+    if (-not (Test-Path $localJson)) {
+        Copy-Item $exampleJson $localJson
+        Write-Host "  [OK] Created appsettings.local.json from .example" -ForegroundColor Green
+    } else {
+        Write-Host "  [OK] appsettings.local.json already exists" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "  [SKIP] No appsettings.local.json.example found" -ForegroundColor DarkGray
+}
+
+# ── 6. User secrets check ─────────────────────────────────────────────────────
 Write-Host "`nChecking user secrets..." -ForegroundColor White
 $exampleFile = "$root/config/user-secrets.example.json"
 if (Test-Path $exampleFile) {
@@ -124,7 +142,7 @@ if (Test-Path $exampleFile) {
     Write-Host "  [SKIP] No config/user-secrets.example.json found" -ForegroundColor DarkGray
 }
 
-# ── 6. Done ───────────────────────────────────────────────────────────────────
+# ── 7. Done ───────────────────────────────────────────────────────────────────
 $appHostName = if ($solution) { "$([System.IO.Path]::GetFileNameWithoutExtension($solution.Name)).AppHost" } else { 'AppHost' }
 
 Write-Host @"
@@ -138,8 +156,11 @@ Setup complete!
     https://localhost:17022
 
   Local dev is fully self-contained — no Azure connection required.
-  Feature flags:  appsettings.Development.json  (FeatureManagement section)
-  Auth:           dev bypass  (appsettings.Development.json Authentication:DevBypass)
+  Feature flags:  appsettings.local.json  (FeatureManagement section)
+  Auth:           dev bypass  (appsettings.local.json Authentication:DevBypass)
   Switch persona: add header  X-Dev-Persona: admin  (or any persona defined in config)
+
+  To pull staging secrets from Azure Key Vault into local user-secrets:
+    .\scripts\dev-hydrate.ps1
 
 "@ -ForegroundColor Cyan
