@@ -1,0 +1,6 @@
+<Project>
+  <!-- Scripts in this folder manage their own package versions via #:package directives. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

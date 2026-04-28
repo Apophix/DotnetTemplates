@@ -2,7 +2,9 @@ import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { PostHogProvider } from 'posthog-js/react'
 
+import { posthog } from '@/shared/lib/posthog'
 import appCss from '../styles.css?url'
 
 const queryClient = new QueryClient()
@@ -40,7 +42,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <QueryClientProvider client={queryClient}>
-          {children}
+          <PostHogProvider client={posthog}>
+            {children}
+          </PostHogProvider>
         </QueryClientProvider>
         {import.meta.env.DEV && (
           <TanStackDevtools

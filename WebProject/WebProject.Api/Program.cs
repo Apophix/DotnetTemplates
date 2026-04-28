@@ -1,19 +1,19 @@
 using Common.Library.Api;
+using Microsoft.FeatureManagement;
 using Sample.Application;
-using WebProject.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.AddApiDefaults();
-builder.AddAzureAppConfigurationDefaults();
+builder.Services.AddFeatureManagement();
+builder.AddPostHogDefaults();
 
 builder.Services.AddSampleApplication();
 
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
-app.UseAzureAppConfigurationDefaults();
 app.UseApiDefaults();
 
 app.Run();

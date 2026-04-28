@@ -22,6 +22,9 @@ public static class ApiExtensions
         /// </summary>
         public WebApplicationBuilder AddApiDefaults()
         {
+            builder.Configuration
+                .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
+
             builder.AddSerilogLogging();
 
             builder.Services.Configure<JsonOptions>(o =>

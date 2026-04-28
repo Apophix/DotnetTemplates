@@ -21,6 +21,7 @@
     "@tanstack/router-plugin": "^1.132.0",
     "apx.rest": "^1.2.0",
     "lucide-react": "^0.561.0",
+    "posthog-js": "^1.372.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.0.6",

@@ -24,10 +24,6 @@ public static class LoggingExtensions
                     .WriteTo.Console(
                         outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}"
                     );
-
-                var seqUrl = context.Configuration.GetConnectionString("seq");
-                if (!string.IsNullOrWhiteSpace(seqUrl))
-                    config.WriteTo.Seq(seqUrl);
             });
 
             return builder;

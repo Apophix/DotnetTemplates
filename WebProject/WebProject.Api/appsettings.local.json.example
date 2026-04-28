@@ -1,4 +1,17 @@
 {
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "FeatureManagement": {
+    "ExampleFlag": false
+  },
+  "PostHog": {
+    "ProjectToken": "",
+    "HostUrl": "https://us.i.posthog.com"
+  },
   "Authentication": {
     "DevBypass": {
       "Enabled": true,

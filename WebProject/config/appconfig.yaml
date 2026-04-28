@@ -12,12 +12,28 @@
 #     (when absent, the import script resolves the vault by environment tag)
 
 shared:
+  # PostHog product analytics (opt-in). Set ProjectToken to enable.
+  # Leave blank to run without PostHog — all analytics calls will be no-ops.
+  # PostHog:ProjectToken: ""
+  # PostHog:HostUrl: "https://us.i.posthog.com"  # EU: https://eu.i.posthog.com
   # Add settings that apply to all environments here.
   # Example:
   # App:SomeSetting: "shared value"
 
 staging:
-  # Add staging-specific overrides here.
+  # DevBypass auth — removed when real auth (Section 7) is implemented.
+  Authentication:DevBypass:Enabled: "true"
+  Authentication:DevBypass:DefaultPersona: "user"
+  Authentication:DevBypass:Personas:user:Sub: "dev-user-001"
+  Authentication:DevBypass:Personas:user:Name: "Dev User"
+  Authentication:DevBypass:Personas:user:Email: "user@localhost"
+  Authentication:DevBypass:Personas:user:Roles:0: "User"
+  Authentication:DevBypass:Personas:admin:Sub: "dev-admin-001"
+  Authentication:DevBypass:Personas:admin:Name: "Dev Admin"
+  Authentication:DevBypass:Personas:admin:Email: "admin@localhost"
+  Authentication:DevBypass:Personas:admin:Roles:0: "User"
+  Authentication:DevBypass:Personas:admin:Roles:1: "Admin"
+  # Add other staging-specific overrides here.
   # Example:
   # App:SomeSetting: "staging value"
   # App:SomeSecret:

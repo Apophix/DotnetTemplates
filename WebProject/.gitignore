@@ -6,6 +6,11 @@
 # dotenv files
 .env
 
+# Local and generated appsettings (not committed; use appsettings.local.json.example as a template)
+appsettings.local.json
+appsettings.Staging.json
+appsettings.Production.json
+
 # User-specific files
 *.rsuser
 *.suo
