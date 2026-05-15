@@ -31,7 +31,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
         // Apply migrations / create schema
         await using var ctx = CreateDbContext();
-        await ctx.Database.EnsureCreatedAsync();
+        await ctx.Database.MigrateAsync();
     }
 
     public async Task DisposeAsync()

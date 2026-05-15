@@ -11,7 +11,7 @@ public static class LoggingExtensions
         /// <summary>
         /// Configures Serilog as the logging provider.
         /// Reads base configuration from appsettings (Serilog section).
-        /// Writes to console and, when a "seq" connection string is present, to a Seq instance.
+        /// Writes to console.
         /// </summary>
         public WebApplicationBuilder AddSerilogLogging()
         {

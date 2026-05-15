@@ -14,7 +14,7 @@ public class SampleService : ISampleService
         {
             Id = id,
             Name = "Test item",
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
         };
 
         // modules communicate via dedicated DTOs, so we convert the domain entity to a DTO before returning it.

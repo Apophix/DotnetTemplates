@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useFeatureFlags } from '@/shared/hooks/use-feature-flags'
+import { useAuth } from '@/shared/auth/AuthContext'
 
 export const Route = createFileRoute('/')({ component: HomePage })
 
@@ -8,6 +9,7 @@ function HomePage() {
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-3xl px-6 py-16 space-y-12">
         <Hero />
+        <AuthStatus />
         <FeatureFlagsStatus />
         <Stack />
       </div>
@@ -34,6 +36,46 @@ function Hero() {
         </code>{' '}
         to get started.
       </p>
+    </section>
+  )
+}
+
+function AuthStatus() {
+  const { user, isAuthenticated, isLoading } = useAuth()
+
+  return (
+    <section className="rounded-xl border border-slate-800 bg-slate-900 p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+            Auth
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            OpenIddict · ASP.NET Core Identity · PKCE
+          </p>
+        </div>
+        {isAuthenticated && (
+          <Link
+            to="/demo/protected"
+            className="text-xs text-slate-400 hover:text-slate-200 underline underline-offset-4 transition-colors"
+          >
+            Protected route →
+          </Link>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-slate-500">Checking session…</p>
+      ) : isAuthenticated && user ? (
+        <div className="space-y-1">
+          <p className="text-sm text-slate-300">{user.email ?? user.sub}</p>
+          <p className="text-xs text-slate-500">{user.roles.join(', ')}</p>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">
+          Not signed in — use the dev login panel (bottom-right) to sign in.
+        </p>
+      )}
     </section>
   )
 }

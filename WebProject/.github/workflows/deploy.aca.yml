@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy (ACA)
 
 on:
   push:
@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ github.sha }}
-      stg_url: ${{ steps.urls.outputs.stg_url }}
       prod_url: ${{ steps.urls.outputs.prod_url }}
     steps:
       - uses: actions/checkout@v4
@@ -56,19 +55,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get API URLs from Container Apps
+      - name: Get API URL from Container Apps
         id: urls
         run: |
-          STG_FQDN=$(az containerapp show \
-            --name app-webprojectazureprefix-api-stg --resource-group rg-webprojectazureprefix \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
           PROD_FQDN=$(az containerapp show \
             --name app-webprojectazureprefix-api --resource-group rg-webprojectazureprefix \
             --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "stg_url=https://${STG_FQDN}" >> $GITHUB_OUTPUT
           echo "prod_url=https://${PROD_FQDN}" >> $GITHUB_OUTPUT
-          echo "Staging API: https://${STG_FQDN}"
-          echo "Prod API:    https://${PROD_FQDN}"
+          echo "Prod API: https://${PROD_FQDN}"
+
+      - name: Generate appsettings.Production.json
+        run: |
+          dotnet run config/gen-appsettings.cs -- \
+            --env production \
+            --output WebProject.Api/appsettings.Production.json
 
       - name: Build and push API image
         run: |
@@ -78,22 +78,6 @@ jobs:
             -t crwebprojectazureprefix.azurecr.io/webproject-api:${{ github.sha }} \
             .
           docker push crwebprojectazureprefix.azurecr.io/webproject-api:${{ github.sha }}
-
-      - name: Build frontend (staging)
-        working-directory: WebProject.Web
-        env:
-          VITE_API_BASE_URL: ${{ steps.urls.outputs.stg_url }}
-        run: |
-          for attempt in 1 2 3; do
-            npm ci && break
-            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
-          done
-          npm run build
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: web-staging
-          path: WebProject.Web/dist/client
 
       - name: Build frontend (production)
         working-directory: WebProject.Web
@@ -116,127 +100,9 @@ jobs:
           name: web-prod
           path: WebProject.Web/dist/client
 
-  deploy-staging:
-    name: Deploy to staging
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: web-staging
-          path: ./web
-
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Sync shared + staging config to App Configuration
-        run: |
-          chmod +x config/sync-appconfig.sh
-          for attempt in 1 2 3; do
-            config/sync-appconfig.sh --scope shared && break
-            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
-          done
-          for attempt in 1 2 3; do
-            config/sync-appconfig.sh --scope staging && break
-            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
-          done
-
-      - name: Deploy API → staging Container App
-        run: |
-          for attempt in 1 2 3; do
-            az containerapp update \
-              --name app-webprojectazureprefix-api-stg \
-              --resource-group rg-webprojectazureprefix \
-              --image crwebprojectazureprefix.azurecr.io/webproject-api:${{ github.sha }} \
-              --output none && break
-            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
-          done
-
-      - name: Get SWA deployment token
-        run: |
-          az_retry() {
-            local n=1 max=5 delay=15
-            until "$@"; do
-              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
-              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
-              sleep $delay
-            done
-          }
-          TOKEN=$(az_retry az staticwebapp secrets list \
-            --name swa-webprojectazureprefix --resource-group rg-webprojectazureprefix \
-            --query properties.apiKey -o tsv)
-          echo "::add-mask::${TOKEN}"
-          echo "SWA_TOKEN=${TOKEN}" >> $GITHUB_ENV
-
-      - name: Deploy frontend → SWA staging environment
-        id: swa_deploy
-        uses: azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
-          action: upload
-          app_location: ./web
-          skip_app_build: true
-          deployment_environment: staging
-
-      - name: Set CORS allowed origin on staging Container App
-        run: |
-          SWA_URL="${{ steps.swa_deploy.outputs.static_web_app_url }}"
-          for attempt in 1 2 3; do
-            az containerapp update \
-              --name app-webprojectazureprefix-api-stg \
-              --resource-group rg-webprojectazureprefix \
-              --set-env-vars "Cors__AllowedOrigins=${SWA_URL}" \
-              --output none && break
-            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
-          done
-
-      - name: Write job summary
-        if: always()
-        run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "## ✅ Deploy to staging" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ❌ Deploy to staging failed" >> $GITHUB_STEP_SUMMARY
-            echo "Check the failed step above. Common causes:" >> $GITHUB_STEP_SUMMARY
-            echo "- **ACA update failed**: transient Azure issue — re-run the job" >> $GITHUB_STEP_SUMMARY
-            echo "- **AppConfig unavailable**: transient Azure outage — re-run the job" >> $GITHUB_STEP_SUMMARY
-            echo "- **Key Vault throttled**: too many requests — re-run the job" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  smoke-test:
-    name: Smoke test staging
-    needs: [build, deploy-staging]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Health check — API staging
-        run: |
-          # Staging scales to zero between deploys. Allow up to 5 minutes for
-          # the cold start (container pull + .NET runtime init + app startup).
-          HEALTH_URL="${{ needs.build.outputs.stg_url }}/health"
-          echo "Health check URL: ${HEALTH_URL}"
-          for i in {1..30}; do
-            HTTP=$(curl -s -o /tmp/health_body.txt -w "%{http_code}" \
-              "${HEALTH_URL}" || echo "000")
-            echo "Attempt $i/30 — ${HEALTH_URL} → HTTP $HTTP"
-            cat /tmp/health_body.txt 2>/dev/null || true
-            echo ""
-            if [ "$HTTP" = "200" ]; then
-              echo "Health check passed"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "Health check failed after 30 attempts (5 minutes) — URL: ${HEALTH_URL}"
-          exit 1
-
   migrate-prod:
     name: Migrate production database
-    needs: smoke-test
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -303,14 +169,6 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Sync production config to App Configuration
-        run: |
-          chmod +x config/sync-appconfig.sh
-          for attempt in 1 2 3; do
-            config/sync-appconfig.sh --scope production && break
-            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
-          done
 
       - name: Get production SWA URL
         id: swa_url

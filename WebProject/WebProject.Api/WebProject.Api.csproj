@@ -14,6 +14,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Common.Library.Api\Common.Library.Api.csproj"/>
+        <ProjectReference Include="..\Common.Library.Auth\Common.Library.Auth.csproj"/>
         <ProjectReference Include="..\Common.Library.Logging\Common.Library.Logging.csproj"/>
         <ProjectReference Include="..\Sample.Application\Sample.Application.csproj"/>
         <ProjectReference Include="..\WebProject.ServiceDefaults\WebProject.ServiceDefaults.csproj"/>

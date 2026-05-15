@@ -16,6 +16,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Common.Library.Auth\Common.Library.Auth.csproj" />
       <ProjectReference Include="..\Common.Library.DevSeeder\Common.Library.DevSeeder.csproj" />
       <ProjectReference Include="..\Sample.Infrastructure\Sample.Infrastructure.csproj" />
       <ProjectReference Include="..\WebProject.ServiceDefaults\WebProject.ServiceDefaults.csproj" />

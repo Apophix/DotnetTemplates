@@ -13,23 +13,9 @@
     "HostUrl": "https://us.i.posthog.com"
   },
   "Authentication": {
-    "DevBypass": {
-      "Enabled": true,
-      "DefaultPersona": "user",
-      "Personas": {
-        "user": {
-          "Sub": "dev-user-001",
-          "Name": "Dev User",
-          "Email": "user@localhost",
-          "Roles": [ "User" ]
-        },
-        "admin": {
-          "Sub": "dev-admin-001",
-          "Name": "Dev Admin",
-          "Email": "admin@localhost",
-          "Roles": [ "User", "Admin" ]
-        }
-      }
-    }
+    "AllowPasswordGrant": true
+  },
+  "Cors": {
+    "AllowedOrigins": [ "http://localhost:5173" ]
   }
 }

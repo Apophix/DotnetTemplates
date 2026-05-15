@@ -21,19 +21,7 @@ shared:
   # App:SomeSetting: "shared value"
 
 staging:
-  # DevBypass auth — removed when real auth (Section 7) is implemented.
-  Authentication:DevBypass:Enabled: "true"
-  Authentication:DevBypass:DefaultPersona: "user"
-  Authentication:DevBypass:Personas:user:Sub: "dev-user-001"
-  Authentication:DevBypass:Personas:user:Name: "Dev User"
-  Authentication:DevBypass:Personas:user:Email: "user@localhost"
-  Authentication:DevBypass:Personas:user:Roles:0: "User"
-  Authentication:DevBypass:Personas:admin:Sub: "dev-admin-001"
-  Authentication:DevBypass:Personas:admin:Name: "Dev Admin"
-  Authentication:DevBypass:Personas:admin:Email: "admin@localhost"
-  Authentication:DevBypass:Personas:admin:Roles:0: "User"
-  Authentication:DevBypass:Personas:admin:Roles:1: "Admin"
-  # Add other staging-specific overrides here.
+  # Add staging-specific overrides here.
   # Example:
   # App:SomeSetting: "staging value"
   # App:SomeSecret:

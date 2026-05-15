@@ -4,6 +4,8 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PostHogProvider } from 'posthog-js/react'
 
+import { AuthProvider } from '@/shared/auth/AuthContext'
+import { DevLoginPanel } from '@/shared/components/dev-login-panel'
 import { posthog } from '@/shared/lib/posthog'
 import appCss from '../styles.css?url'
 
@@ -41,11 +43,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <QueryClientProvider client={queryClient}>
-          <PostHogProvider client={posthog}>
-            {children}
-          </PostHogProvider>
-        </QueryClientProvider>
+        <AuthProvider>
+          <QueryClientProvider client={queryClient}>
+            <PostHogProvider client={posthog}>
+              {children}
+              <DevLoginPanel />
+            </PostHogProvider>
+          </QueryClientProvider>
+        </AuthProvider>
         {import.meta.env.DEV && (
           <TanStackDevtools
             config={{ position: 'bottom-right' }}

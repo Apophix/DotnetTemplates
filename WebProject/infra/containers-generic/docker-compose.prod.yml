@@ -1,0 +1,80 @@
+# Production Docker Compose — uses pre-built images from a registry.
+# Configure via a .env file or environment variables before running.
+#
+# Required variables:
+#   REGISTRY          — container registry host, e.g. yourregistry.azurecr.io
+#   IMAGE_TAG         — image tag to deploy, e.g. abc1234 or v1.2.0
+#   MSSQL_SA_PASSWORD — must meet SQL Server complexity rules
+#   DB_CONN           — full ADO.NET connection string for the API
+#                       e.g. Server=tcp:db,1433;Initial Catalog=webproject;
+#                            User ID=sa;Password=<pw>;Encrypt=True;TrustServerCertificate=True;
+#
+# Usage:
+#   docker compose --file infra/containers-generic/docker-compose.prod.yml up -d
+#
+# To pull images from a private registry first:
+#   docker login ${REGISTRY}
+#   docker compose --file ... pull
+#   docker compose --file ... up -d
+
+services:
+
+  # -------------------------------------------------------------------------
+  # SQL Server
+  # Remove this service if you are using a managed database (recommended for
+  # production). Update DB_CONN to point at your external server.
+  # -------------------------------------------------------------------------
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD}"
+      MSSQL_PID: Developer
+    volumes:
+      - sql-data:/var/opt/mssql
+    healthcheck:
+      test: >
+        /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa
+        -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # .NET API — pre-built image from registry
+  # -------------------------------------------------------------------------
+  api:
+    image: "${REGISTRY:?Set REGISTRY}/webproject-api:${IMAGE_TAG:?Set IMAGE_TAG}"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      ConnectionStrings__app-db: "${DB_CONN:?Set DB_CONN}"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/alive || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # React SPA — pre-built nginx image from registry
+  # The API base URL is baked in at build time; browsers call the host port.
+  # -------------------------------------------------------------------------
+  web:
+    image: "${REGISTRY:?Set REGISTRY}/webproject-web:${IMAGE_TAG:?Set IMAGE_TAG}"
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+volumes:
+  sql-data:

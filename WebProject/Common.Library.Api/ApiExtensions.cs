@@ -40,23 +40,27 @@ public static class ApiExtensions
             builder.Services.AddProblemDetails();
             builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-            // Authentication services — no real scheme registered yet.
-            // DevAuthMiddleware (added in UseApiDefaults) satisfies auth locally in Development.
-            // Replace with AddAuthentication(...).AddJwtBearer(...) when Entra External ID is configured.
             builder.Services.AddAuthentication();
 
             builder.Services.AddCors(c =>
                 c.AddDefaultPolicy(p =>
                 {
-                    p.SetIsOriginAllowed(o =>
+                    p.SetIsOriginAllowed(origin =>
                     {
-                        var url = builder.Configuration["services:web:http:0"];
-                        var allowedOrigins = new HashSet<string> { "http://localhost:3000" };
+                        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                        if (!string.IsNullOrEmpty(url))
-                            allowedOrigins.Add(url);
+                        // Origins injected by Aspire service references
+                        var aspireHttp  = builder.Configuration["services:web:http:0"];
+                        var aspireHttps = builder.Configuration["services:web:https:0"];
+                        if (!string.IsNullOrEmpty(aspireHttp))  allowed.Add(aspireHttp);
+                        if (!string.IsNullOrEmpty(aspireHttps)) allowed.Add(aspireHttps);
 
-                        return allowedOrigins.Contains(o);
+                        // Additional origins from config (e.g. appsettings.local.json)
+                        var configured = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+                        if (configured is not null)
+                            foreach (var o in configured) allowed.Add(o);
+
+                        return allowed.Contains(origin);
                     });
                     p.AllowAnyHeader();
                     p.AllowAnyMethod();
@@ -84,7 +88,6 @@ public static class ApiExtensions
             app.UseHttpsRedirection();
 
             app.UseAuthentication();
-            app.UseMiddleware<DevAuthMiddleware>();
             app.UseAuthorization();
 
             app.MapControllers();

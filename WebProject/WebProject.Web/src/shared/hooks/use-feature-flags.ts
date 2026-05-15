@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { MyApiClient } from '@/shared/clients/MyApiClient'
-
-const client = new MyApiClient()
+import { usePublicApiClient } from '@/shared/hooks/use-api-client'
 
 export function useFeatureFlags(): Record<string, boolean> {
+  const client = usePublicApiClient()
   const { data } = useQuery({
     queryKey: ['feature-flags'],
     queryFn: async () => {

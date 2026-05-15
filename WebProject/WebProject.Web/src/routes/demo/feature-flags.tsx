@@ -1,13 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { MyApiClient } from '@/shared/clients/MyApiClient'
 import { useFeatureFlag, useFeatureFlags } from '@/shared/hooks/use-feature-flags'
+import { usePublicApiClient } from '@/shared/hooks/use-api-client'
 
 export const Route = createFileRoute('/demo/feature-flags')({
   component: FeatureFlagsDemo,
 })
-
-const client = new MyApiClient()
 
 // ─── 1. Basic gate ────────────────────────────────────────────────────────────
 // Render nothing (or an alternative) when the flag is off.
@@ -127,6 +125,7 @@ function AllFlagsTable() {
 // The backend switches the entire ICheckoutService implementation based on the flag.
 // This component shows what the server resolved — proving the variant pattern works.
 function VariantServicePanel() {
+  const client = usePublicApiClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['checkout-variant'],
     queryFn: async () => {

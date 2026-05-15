@@ -1,9 +1,9 @@
-name: Staging (App Service)
+name: Staging (ACA)
 
 # Merges all currently open PRs into main, builds the combined result, migrates
 # the staging database, and deploys to the shared staging environment.
 #
-# Nightly wipe-and-rebuild lives in staging-nuke.appservice.yml.
+# Nightly wipe-and-rebuild lives in staging-nuke.aca.yml.
 
 on:
   pull_request:
@@ -23,39 +23,31 @@ permissions:
 #
 #   STAGING_API_URL        The base URL of the staging API (used when building the
 #                          frontend so VITE_API_BASE_URL is baked into the SPA bundle).
-#                          Option A example: https://app-<prefix>-api-staging.azurewebsites.net
-#                          Option B example: https://app-<prefix>-api-stg.azurewebsites.net
+#                          Example: https://app-<prefix>-api-stg.<region>.azurecontainerapps.io
 #
 #   STAGING_RESOURCE_GROUP Azure resource group containing the staging resources.
 #
-#   STAGING_APPSERVICE_NAME
-#                          Option A: the App Service that owns the staging slot
-#                                    (same App Service as production).
-#                          Option B: the dedicated staging App Service name.
+#   STAGING_ACA_NAME       The staging API Container App name.
+#                          Example: app-<prefix>-api-stg
+#
+#   STAGING_ACR_NAME       Azure Container Registry name (without .azurecr.io).
+#                          Example: cr<prefix>
 #
 #   STAGING_SWA_NAME       The Azure Static Web App name (shared between environments).
 #
-#   STAGING_SQL_SERVER     Azure SQL Server name (without .database.windows.net).
-#                          Example: sql-myapp-staging
-#
-#   STAGING_SQL_DB_NAME    Azure SQL database name.
-#                          Example: sqldb-myapp-staging
+#   STAGING_KEYVAULT_NAME  Key Vault that holds the staging database connection string.
+#                          Secret name must be: sql-connection-string
+#                          Value must be a PostgreSQL connection string, e.g.:
+#                            Host=<server>.postgres.database.azure.com;Database=<db>;...
 #
 # Repository secrets (Settings → Secrets and variables → Actions → Secrets):
-#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   (same as deploy workflow)
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 #
-# ── SQL access for the GitHub Actions service principal ───────────────────────
+# ── Database access ───────────────────────────────────────────────────────────
 #
-# The service principal identified by AZURE_CLIENT_ID must be granted access to the
-# staging SQL database. Run once against the staging database:
-#
-#   CREATE USER [<service-principal-display-name>] FROM EXTERNAL PROVIDER;
-#   ALTER ROLE db_owner ADD MEMBER [<service-principal-display-name>];
-#
-# The SQL Server must also have "Azure AD authentication only" or mixed-mode
-# authentication enabled (Azure Portal → SQL Server → Microsoft Entra ID).
-# No connection-string secrets are used — authentication uses the OIDC token
-# acquired by azure/login above.
+# The staging PostgreSQL connection string is read from Key Vault and passed
+# to the migration service. The GitHub Actions service principal must have
+# Key Vault Secrets User role on STAGING_KEYVAULT_NAME.
 
 jobs:
   # ── Normal path: Merge open PRs into main, then build ─────────────────────
@@ -120,7 +112,6 @@ jobs:
             --json number,headRefName,createdAt,headSha \
             --jq 'sort_by(.createdAt) | .[] | @json')
 
-          # Output PR lists as JSON arrays of integers
           INCLUDED_JSON=$(printf '%s\n' "${INCLUDED[@]:-}" \
             | grep -v '^$' | jq -Rsc '[.[] | split("\n") | .[] | select(. != "") | tonumber]' \
             || echo '[]')
@@ -156,19 +147,6 @@ jobs:
             --no-restore \
             --filter "FullyQualifiedName!~Integration"
 
-      - name: Generate appsettings.Staging.json
-        run: |
-          dotnet run config/gen-appsettings.cs -- \
-            --env staging \
-            --output WebProject.Api/appsettings.Staging.json
-
-      - name: Publish API
-        run: |
-          dotnet publish WebProject.Api/WebProject.Api.csproj \
-            --configuration Release \
-            --output publish/api \
-            --no-restore
-
       - name: Publish migration service
         run: |
           dotnet publish WebProject.MigrationService/WebProject.MigrationService.csproj \
@@ -176,10 +154,32 @@ jobs:
             --output publish/migration \
             --no-restore
 
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Generate appsettings.Staging.json
+        run: |
+          dotnet run config/gen-appsettings.cs -- \
+            --env staging \
+            --output WebProject.Api/appsettings.Staging.json
+
+      # The Docker build runs here — in the same job as the merge — because the
+      # merged git state (main + all open PRs) only exists on this runner.
+      - name: Build and push API image
+        run: |
+          az acr login --name ${{ vars.STAGING_ACR_NAME }}
+          docker build \
+            -f WebProject.Api/Dockerfile \
+            -t ${{ vars.STAGING_ACR_NAME }}.azurecr.io/webproject-api:${{ github.sha }} \
+            .
+          docker push ${{ vars.STAGING_ACR_NAME }}.azurecr.io/webproject-api:${{ github.sha }}
+
       - name: Build frontend
         working-directory: WebProject.Web
         env:
-          # STAGING_API_URL is a repository variable — set it in Settings → Variables.
           VITE_API_BASE_URL: ${{ vars.STAGING_API_URL }}
         run: |
           for attempt in 1 2 3; do
@@ -188,31 +188,34 @@ jobs:
           done
           npm run build
 
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      # Migrations run here — in the same job as the build — because the merged
-      # git state (main + all open PRs) only exists on this runner. There's no
-      # persistent branch to check out in a downstream job, so there's no reason
-      # to upload the migration binary as an artifact just to run it elsewhere.
+      # Migrations run here — same job as the build — for the same reason as above.
+      # The 'app-db' connection string key contains a hyphen, which bash cannot
+      # represent as a variable assignment; we use `env "KEY=VALUE"` instead.
       - name: Run migrations against staging database
         id: migrate
         run: |
-          # Authenticate to SQL via the service principal — no connection-string secret needed.
-          # Microsoft.Data.SqlClient resolves 'Active Directory Default' through
-          # DefaultAzureCredential → AzureCliCredential (set up by azure/login above).
-          CONN="Server=tcp:${{ vars.STAGING_SQL_SERVER }}.database.windows.net,1433;Database=${{ vars.STAGING_SQL_DB_NAME }};Authentication=Active Directory Default;Encrypt=True;"
-          ASPNETCORE_ENVIRONMENT=Staging \
-          ConnectionStrings__DefaultConnection="${CONN}" \
-          dotnet ./publish/migration/WebProject.MigrationService.dll 2>&1 | tee /tmp/migration.log
-          exit ${PIPESTATUS[0]}
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          CONN=$(az_retry az keyvault secret show \
+            --vault-name ${{ vars.STAGING_KEYVAULT_NAME }} \
+            --name sql-connection-string \
+            --query value -o tsv)
+          echo "::add-mask::${CONN}"
+          env \
+            ASPNETCORE_ENVIRONMENT=Staging \
+            "ConnectionStrings__app-db=${CONN}" \
+            dotnet ./publish/migration/WebProject.MigrationService.dll 2>&1 | tee /tmp/migration.log
+          MIGRATION_EXIT=${PIPESTATUS[0]}
+          exit $MIGRATION_EXIT
 
       # Only the triggering PR is notified on failure. Previous PRs have already had their
       # migrations applied on their own pipeline runs — the staging DB has those applied.
-      # If migration fails now, only this PR's new migrations are candidates for the failure.
       - name: Post migration failure to triggering PR
         if: failure() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -246,12 +249,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: api
-          path: publish/api
-
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
           name: web
           path: WebProject.Web/dist/client
 
@@ -267,11 +264,6 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: api
-          path: ./api
-
-      - uses: actions/download-artifact@v4
-        with:
           name: web
           path: ./web
 
@@ -281,35 +273,16 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # ── CONFIGURE: Choose your App Service deployment arrangement ────────────
-      #
-      # Pick ONE option and delete the other. Your choice must match the production
-      # deploy step in deploy.appservice.yml (staging and production should mirror).
-      #
-      # OPTION A — Deployment slot
-      #   Staging is a slot named 'staging' on the production App Service.
-      #   Required variable: STAGING_APPSERVICE_NAME (same App Service as production)
-      #
-      # OPTION B — Separate App Service resource
-      #   Staging is a dedicated App Service instance.
-      #   Required variable: STAGING_APPSERVICE_NAME (name of the dedicated staging App Service)
-      #
-      # ────────────────────────────────────────────────────────────────────────
-
-      # OPTION A — Deploy API to staging slot
-      - name: Deploy API → staging slot
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ vars.STAGING_APPSERVICE_NAME }}
-          slot-name: staging
-          package: ./api
-
-      # OPTION B — Deploy API to dedicated staging App Service (uncomment to use)
-      # - name: Deploy API → staging App Service
-      #   uses: azure/webapps-deploy@v3
-      #   with:
-      #     app-name: ${{ vars.STAGING_APPSERVICE_NAME }}
-      #     package: ./api
+      - name: Deploy API → staging Container App
+        run: |
+          for attempt in 1 2 3; do
+            az containerapp update \
+              --name ${{ vars.STAGING_ACA_NAME }} \
+              --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+              --image ${{ vars.STAGING_ACR_NAME }}.azurecr.io/webproject-api:${{ github.sha }} \
+              --output none && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
 
       - name: Get SWA deployment token
         run: |
@@ -338,37 +311,17 @@ jobs:
           skip_app_build: true
           deployment_environment: staging
 
-      # Set CORS on the API to the SWA staging URL.
-      # Must match whichever Option (A or B) you chose for the API deploy above.
-
-      # OPTION A — Set CORS on staging slot
-      - name: Set CORS on staging slot
+      - name: Set CORS allowed origin on staging Container App
         run: |
-          for i in {1..6}; do
-            az webapp config appsettings set \
+          SWA_URL="${{ steps.swa_deploy.outputs.static_web_app_url }}"
+          for attempt in 1 2 3; do
+            az containerapp update \
+              --name ${{ vars.STAGING_ACA_NAME }} \
               --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
-              --name ${{ vars.STAGING_APPSERVICE_NAME }} \
-              --slot staging \
-              --settings "Cors__AllowedOrigins=${{ steps.swa_deploy.outputs.static_web_app_url }}" \
-              --output none && exit 0
-            echo "Attempt $i/6 failed (slot busy) — retrying in 15s..."
-            sleep 15
+              --set-env-vars "Cors__AllowedOrigins=${SWA_URL}" \
+              --output none && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
           done
-          exit 1
-
-      # OPTION B — Set CORS on dedicated staging App Service (uncomment to use)
-      # - name: Set CORS on staging App Service
-      #   run: |
-      #     for i in {1..6}; do
-      #       az webapp config appsettings set \
-      #         --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
-      #         --name ${{ vars.STAGING_APPSERVICE_NAME }} \
-      #         --settings "Cors__AllowedOrigins=${{ steps.swa_deploy.outputs.static_web_app_url }}" \
-      #         --output none && exit 0
-      #       echo "Attempt $i/6 failed — retrying in 15s..."
-      #       sleep 15
-      #     done
-      #     exit 1
 
       - name: Write job summary
         if: always()
@@ -379,7 +332,7 @@ jobs:
           else
             echo "## ❌ Deploy to staging failed" >> $GITHUB_STEP_SUMMARY
             echo "Common causes:" >> $GITHUB_STEP_SUMMARY
-            echo "- **Slot 409 Conflict**: slot is still processing a previous operation — re-run the job" >> $GITHUB_STEP_SUMMARY
+            echo "- **ACA update failed**: transient Azure issue — re-run the job" >> $GITHUB_STEP_SUMMARY
             echo "- **AppConfig unavailable**: transient Azure outage — re-run the job" >> $GITHUB_STEP_SUMMARY
             echo "- **Key Vault throttled**: too many requests — re-run the job" >> $GITHUB_STEP_SUMMARY
           fi
@@ -435,4 +388,4 @@ jobs:
 
   # ── Nightly wipe-and-rebuild ──────────────────────────────────────────────
   #
-  # Defined in staging-nuke.appservice.yml
+  # Defined in staging-nuke.aca.yml

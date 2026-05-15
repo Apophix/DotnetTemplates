@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Sample.Application.Services;
 using Sample.Infrastructure;
 
@@ -8,9 +9,13 @@ public static class Extensions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddSampleApplication()
+        /// <param name="configureDatabase">
+        /// Configures the database provider and connection string, forwarded to infrastructure.
+        /// Example: <c>(sp, o) => o.UseNpgsql(connStr)</c>
+        /// </param>
+        public IServiceCollection AddSampleApplication(Action<IServiceProvider, DbContextOptionsBuilder> configureDatabase)
         {
-            services.AddSampleInfrastructure();
+            services.AddSampleInfrastructure(configureDatabase);
 
             // Variant service pattern: two keyed implementations + a resolver proxy.
             // Callers inject ICheckoutService normally; the resolver picks the active

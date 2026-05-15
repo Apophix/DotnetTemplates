@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sample.Infrastructure.Persistence;
 
@@ -9,19 +8,16 @@ public static class Extensions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddSampleInfrastructure()
+        /// <param name="configureDatabase">
+        /// Configures the database provider and connection string.
+        /// Example: <c>(sp, o) => o.UseNpgsql(sp.GetRequiredService&lt;IConfiguration&gt;().GetConnectionString("app-db"))</c>
+        /// </param>
+        public IServiceCollection AddSampleInfrastructure(Action<IServiceProvider, DbContextOptionsBuilder> configureDatabase)
         {
-            services.AddDbContext<SampleDbContext>((sp, options) =>
-                options.UseNpgsql(GetConnectionString(sp)));
-
-            services.AddDbContextFactory<SampleDbContext>((sp, options) =>
-                options.UseNpgsql(GetConnectionString(sp)), ServiceLifetime.Scoped);
+            services.AddDbContext<SampleDbContext>(configureDatabase);
+            services.AddDbContextFactory<SampleDbContext>(configureDatabase, ServiceLifetime.Scoped);
 
             return services;
         }
     }
-
-    private static string GetConnectionString(IServiceProvider sp) =>
-        sp.GetRequiredService<IConfiguration>().GetConnectionString("app-db")
-        ?? throw new InvalidOperationException("Connection string 'app-db' is not configured.");
 }

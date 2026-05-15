@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/Common/">
     <Project Path="Common.Library.Api/Common.Library.Api.csproj" />
+    <Project Path="Common.Library.Auth/Common.Library.Auth.csproj" />
     <Project Path="Common.Library.DevSeeder/Common.Library.DevSeeder.csproj" />
     <Project Path="Common.Library.Logging/Common.Library.Logging.csproj" />
   </Folder>

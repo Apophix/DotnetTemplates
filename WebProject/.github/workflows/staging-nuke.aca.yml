@@ -1,0 +1,276 @@
+name: Staging Nuke & Rebuild (ACA)
+
+# Drops and recreates the staging PostgreSQL database, runs all migrations from
+# scratch, seeds reference data via DevSeeder, then bounces the staging API so
+# it starts with a clean connection pool.
+#
+# Runs automatically at 02:00 UTC every night. Can also be triggered on-demand
+# via the GitHub Actions UI (workflow_dispatch).
+#
+# This is the recovery mechanism for a staging database that has drifted,
+# accumulated test pollution, or been left in a partially-migrated state.
+# It does NOT rebuild the application image — whatever revision is already
+# running in the staging Container App continues running after the DB is rebuilt.
+#
+# The normal staging build pipeline lives in staging.aca.yml.
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC nightly
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual nuke (optional, shown in job summary)'
+        type: string
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+# ── Repository variables used by this workflow ────────────────────────────────
+#
+# These are the same variables used by staging.aca.yml plus two Postgres-specific ones.
+# Create them in Settings → Secrets and variables → Actions → Variables:
+#
+#   STAGING_RESOURCE_GROUP   Azure resource group for staging resources.
+#   STAGING_ACA_NAME         Staging API Container App name.
+#   STAGING_KEYVAULT_NAME    Key Vault that holds the staging connection string
+#                            (secret name: sql-connection-string).
+#   STAGING_POSTGRES_SERVER  PostgreSQL Flexible Server name (without the
+#                            .postgres.database.azure.com suffix).
+#                            Example: psql-<prefix>-stg
+#   STAGING_POSTGRES_DB      PostgreSQL database name to drop and recreate.
+#                            Example: app-stg
+#
+# Repository secrets:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#
+# ── Database access ───────────────────────────────────────────────────────────
+#
+# The service principal identified by AZURE_CLIENT_ID must be a Microsoft Entra
+# admin on the PostgreSQL Flexible Server (required for DROP DATABASE). Set this
+# once in the Azure portal: PostgreSQL server → Authentication → Entra admin.
+#
+# The same principal must also have Key Vault Secrets User role on
+# STAGING_KEYVAULT_NAME to read the connection string.
+
+jobs:
+  nuke-and-rebuild:
+    name: Nuke & rebuild staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── Read connection string from Key Vault ──────────────────────────────
+
+      - name: Read staging connection string
+        run: |
+          az_retry() {
+            local n=1 max=5 delay=15
+            until "$@"; do
+              (( n++ >= max )) && { echo "ERROR: command failed after $((max)) attempts: $*" >&2; return 1; }
+              echo "Attempt $((n-1))/$((max-1)) failed — retrying in ${delay}s..."
+              sleep $delay
+            done
+          }
+          CONN=$(az_retry az keyvault secret show \
+            --vault-name ${{ vars.STAGING_KEYVAULT_NAME }} \
+            --name sql-connection-string \
+            --query value -o tsv)
+          echo "::add-mask::${CONN}"
+          echo "STAGING_CONN=${CONN}" >> $GITHUB_ENV
+
+      # ── Drop and recreate the staging database ─────────────────────────────
+
+      - name: Drop staging database
+        run: |
+          az postgres flexible-server db delete \
+            --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+            --server-name ${{ vars.STAGING_POSTGRES_SERVER }} \
+            --database-name ${{ vars.STAGING_POSTGRES_DB }} \
+            --yes
+          echo "Database dropped"
+
+      - name: Recreate staging database
+        run: |
+          az postgres flexible-server db create \
+            --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+            --server-name ${{ vars.STAGING_POSTGRES_SERVER }} \
+            --database-name ${{ vars.STAGING_POSTGRES_DB }}
+          echo "Database recreated"
+
+      # ── Run all migrations from scratch ────────────────────────────────────
+
+      # ── Apply migrations incrementally, one PR at a time ──────────────────
+      #
+      # After a DB drop+recreate we cannot run migrations for all PRs at once —
+      # we would lose attribution when a migration fails. Instead we:
+      #   1. Apply main's baseline migrations first.
+      #   2. For each open PR (oldest first): merge → rebuild migration service → run.
+      #      Only the migrations added by THAT PR are pending, so a failure clearly
+      #      belongs to it. The failing PR is notified and the job stops.
+      #
+      # Merge conflicts are skipped (their migrations are not applied).
+      #
+      # Note: 'app-db' contains a hyphen and cannot be set as a plain bash variable.
+      # We use `env "ConnectionStrings__app-db=..."` to pass it to the .NET process.
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Configure git identity
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Restore
+        run: |
+          for attempt in 1 2 3; do
+            dotnet restore WebProject.slnx && break
+            [ $attempt -lt 3 ] && { echo "Attempt $attempt/3 failed — retrying in 15s..."; sleep 15; } || exit 1
+          done
+
+      - name: Apply baseline migrations (main)
+        run: |
+          dotnet publish WebProject.MigrationService/WebProject.MigrationService.csproj \
+            --configuration Release \
+            --output publish/migration \
+            --no-restore
+          env \
+            ASPNETCORE_ENVIRONMENT=Staging \
+            "ConnectionStrings__app-db=${STAGING_CONN}" \
+            dotnet ./publish/migration/WebProject.MigrationService.dll 2>&1 | tee /tmp/migration-main.log
+          echo "✅ Main migrations applied"
+
+      - name: Apply PR migrations incrementally (oldest first)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while IFS= read -r PR_JSON; do
+            [ -z "$PR_JSON" ] && continue
+            PR_NUM=$(echo "$PR_JSON" | jq -r '.number')
+            PR_BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
+
+            echo "── Merging PR #${PR_NUM}: ${PR_BRANCH} ──"
+            git fetch origin "${PR_BRANCH}" 2>/dev/null || {
+              echo "⚠️ Could not fetch ${PR_BRANCH} — skipping PR #${PR_NUM}"
+              continue
+            }
+
+            if ! git merge --no-commit --no-ff FETCH_HEAD 2>/dev/null; then
+              git merge --abort
+              echo "⚠️ PR #${PR_NUM} has a merge conflict — skipping (its migrations will not be applied)"
+              continue
+            fi
+            git commit -m "Merge PR #${PR_NUM} (${PR_BRANCH}) for nuke migration" --allow-empty
+
+            # Rebuild after merge so this PR's new migration classes are in the binary.
+            dotnet restore WebProject.slnx --verbosity quiet
+            dotnet publish WebProject.MigrationService/WebProject.MigrationService.csproj \
+              --configuration Release \
+              --output publish/migration \
+              --no-restore
+
+            echo "Running migrations for PR #${PR_NUM}..."
+            if ! env \
+                 ASPNETCORE_ENVIRONMENT=Staging \
+                 "ConnectionStrings__app-db=${STAGING_CONN}" \
+                 dotnet ./publish/migration/WebProject.MigrationService.dll \
+                 2>&1 | tee "/tmp/migration-pr${PR_NUM}.log"; then
+
+              echo "❌ Migrations for PR #${PR_NUM} failed — notifying PR and stopping"
+              RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              MIGRATION_LOG=$(tail -c 3000 "/tmp/migration-pr${PR_NUM}.log")
+              gh issue comment "${PR_NUM}" \
+                --repo "${{ github.repository }}" \
+                --body "$(printf '## ❌ Staging nuke: migration failed\n\nThe EF migrations introduced by this PR failed during the nightly staging wipe-and-rebuild.\n\n[View workflow run](%s)\n\n<details><summary>Migration output (last 3 000 chars)</summary>\n\n```\n%s\n```\n\n</details>\n\n_The staging environment is partially rebuilt. The next nightly wipe will attempt a full rebuild._' \
+                  "${RUN_URL}" "${MIGRATION_LOG}")"
+              exit 1
+            fi
+
+            echo "✅ PR #${PR_NUM} migrations applied"
+          done < <(gh pr list --state open --base main \
+            --json number,headRefName,createdAt \
+            --jq 'sort_by(.createdAt) | .[] | @json')
+
+      # ── Run DevSeeder to repopulate reference/seed data ────────────────────
+
+      - name: Run DevSeeder
+        run: |
+          SEED_OUTPUT=$(env \
+            ASPNETCORE_ENVIRONMENT=Staging \
+            "ConnectionStrings__app-db=${STAGING_CONN}" \
+            dotnet run --project Common.Library.DevSeeder \
+              --configuration Release \
+              --no-restore 2>&1)
+          echo "${SEED_OUTPUT}"
+          echo "SEED_OUTPUT<<EOF" >> $GITHUB_ENV
+          echo "${SEED_OUTPUT}" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      # ── Bounce the staging Container App ──────────────────────────────────
+      #
+      # Scale to zero then back to normal. This terminates all running replicas
+      # so the next request starts fresh against the rebuilt database — clearing
+      # any stale in-memory caches or connection pool state.
+
+      - name: Bounce staging Container App
+        run: |
+          az containerapp update \
+            --name ${{ vars.STAGING_ACA_NAME }} \
+            --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+            --min-replicas 0 \
+            --max-replicas 0 \
+            --output none
+          sleep 5
+          az containerapp update \
+            --name ${{ vars.STAGING_ACA_NAME }} \
+            --resource-group ${{ vars.STAGING_RESOURCE_GROUP }} \
+            --min-replicas 0 \
+            --max-replicas 3 \
+            --output none
+          echo "Staging Container App bounced"
+
+      # ── Job summary ────────────────────────────────────────────────────────
+
+      - name: Write job summary
+        if: always()
+        run: |
+          TRIGGER="${{ github.event_name }}"
+          REASON="${{ inputs.reason }}"
+
+          {
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "## ✅ Staging nuke & rebuild succeeded"
+            else
+              echo "## ❌ Staging nuke & rebuild failed"
+            fi
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Triggered by** | ${TRIGGER} |"
+            [ -n "${REASON}" ] && echo "| **Reason** | ${REASON} |"
+            echo "| **Database** | ${{ vars.STAGING_POSTGRES_DB }} |"
+            echo "| **Server** | ${{ vars.STAGING_POSTGRES_SERVER }} |"
+            echo ""
+            echo "Migration logs are in the step output above (one step per PR)."
+            echo ""
+            echo "### DevSeeder output"
+            echo '```'
+            echo "${SEED_OUTPUT:-no output}"
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY

@@ -10,11 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DemoProtectedRouteImport } from './routes/demo/protected'
 import { Route as DemoFeatureFlagsRouteImport } from './routes/demo/feature-flags'
+import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoProtectedRoute = DemoProtectedRouteImport.update({
+  id: '/demo/protected',
+  path: '/demo/protected',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoFeatureFlagsRoute = DemoFeatureFlagsRouteImport.update({
@@ -22,31 +29,49 @@ const DemoFeatureFlagsRoute = DemoFeatureFlagsRouteImport.update({
   path: '/demo/feature-flags',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/demo/feature-flags': typeof DemoFeatureFlagsRoute
+  '/demo/protected': typeof DemoProtectedRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/demo/feature-flags': typeof DemoFeatureFlagsRoute
+  '/demo/protected': typeof DemoProtectedRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/demo/feature-flags': typeof DemoFeatureFlagsRoute
+  '/demo/protected': typeof DemoProtectedRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/demo/feature-flags'
+  fullPaths: '/' | '/auth/callback' | '/demo/feature-flags' | '/demo/protected'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/demo/feature-flags'
-  id: '__root__' | '/' | '/demo/feature-flags'
+  to: '/' | '/auth/callback' | '/demo/feature-flags' | '/demo/protected'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth/callback'
+    | '/demo/feature-flags'
+    | '/demo/protected'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   DemoFeatureFlagsRoute: typeof DemoFeatureFlagsRoute
+  DemoProtectedRoute: typeof DemoProtectedRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +83,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/demo/protected': {
+      id: '/demo/protected'
+      path: '/demo/protected'
+      fullPath: '/demo/protected'
+      preLoaderRoute: typeof DemoProtectedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/demo/feature-flags': {
       id: '/demo/feature-flags'
       path: '/demo/feature-flags'
@@ -65,12 +97,21 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoFeatureFlagsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   DemoFeatureFlagsRoute: DemoFeatureFlagsRoute,
+  DemoProtectedRoute: DemoProtectedRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

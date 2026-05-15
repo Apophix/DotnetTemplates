@@ -8,7 +8,7 @@ public class SampleItemTests
     public void SampleItem_WithValidData_SetsPropertiesCorrectly()
     {
         var id = Guid.NewGuid();
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
 
         var item = new SampleItem
         {
