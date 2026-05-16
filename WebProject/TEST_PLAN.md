@@ -167,6 +167,29 @@ docker compose --file infra/containers-generic/docker-compose.yml up --build
 - [ ] Migrations do NOT run automatically via this compose file (documented limitation — use Aspire or run manually)
 - [ ] `docker compose down -v` cleans up all volumes
 
+### 1.14 Cleanup
+
+```bash
+# 1. Stop Aspire (Ctrl+C in the terminal running dotnet run --project MyApp.AppHost)
+
+# 2. Stop and remove Docker Compose stack and volumes
+docker compose --file infra/containers-generic/docker-compose.yml down -v --remove-orphans
+
+# 3. Remove Testcontainer images pulled during integration tests (optional — they will be reused)
+docker rmi postgres:16-alpine 2>/dev/null || true
+
+# 4. Remove dotnet user secrets for the AppHost project
+dotnet user-secrets clear --project MyApp.AppHost
+
+# 5. Remove the scaffolded project directory
+cd ..
+Remove-Item -Recurse -Force MyApp   # PowerShell
+# rm -rf MyApp                      # bash
+```
+
+- [ ] All Docker containers stopped; no orphaned containers (`docker ps -a` shows no MyApp containers)
+- [ ] Scaffolded directory removed
+
 ---
 
 ## Suite 2 — App Service Scaffold
@@ -292,6 +315,35 @@ Trigger `staging-nuke.appservice.yml` (or wait for scheduled run).
 - [ ] Current staging build redeployed (no new merge)
 - [ ] GitHub Actions job summary posted with migration list and seed row counts
 
+### 2.10 Cleanup
+
+```bash
+# 1. Stop Aspire (Ctrl+C)
+
+# 2. Remove generated appsettings artefacts (should already be gitignored — verify none were committed)
+Remove-Item -Force MyApp.Api/appsettings.Staging.json, MyApp.Api/appsettings.Production.json -ErrorAction SilentlyContinue
+
+# 3. If Azure infrastructure was deployed in 2.6–2.9, tear it down:
+az stack group delete --name myapp-stack --resource-group rg-myapp --action-on-unmanage deleteAll --yes
+# Double-check: remove any CanNotDelete locks first if the delete is blocked
+az lock delete --name <lock-name> --resource-group rg-myapp --resource-type <type> --resource <name>
+
+# 4. If a GitHub repo was used for workflow testing, revoke/remove the AZURE_CLIENT_ID,
+#    AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, and any deployment secrets from repo settings.
+
+# 5. Remove dotnet user secrets
+dotnet user-secrets clear --project MyApp.AppHost
+
+# 6. Remove the scaffolded project directory
+cd ..
+Remove-Item -Recurse -Force MyApp   # PowerShell
+# rm -rf MyApp                      # bash
+```
+
+- [ ] No Azure resources remain in the subscription under the test resource group
+- [ ] No deployment secrets left in the test GitHub repo
+- [ ] Scaffolded directory removed
+
 ---
 
 ## Suite 3 — Container Apps Scaffold
@@ -382,6 +434,43 @@ Follow `infra/azure-container-apps/README.md`.
 - [ ] `staging-nuke.aca.yml` scales ACA to 0 replicas, recreates database, scales back up
 - [ ] Dev login panel visible at staging URL
 
+### 3.8 Cleanup
+
+```bash
+# 1. Stop any running Docker containers from this suite
+docker stop $(docker ps -q --filter "ancestor=myapp-api:test") 2>/dev/null || true
+docker stop $(docker ps -q --filter "ancestor=myapp-api:staging") 2>/dev/null || true
+
+# 2. Remove Docker images built during testing
+docker rmi myapp-api:test myapp-api:staging 2>/dev/null || true
+
+# 3. Stop and remove Docker Compose prod stack if started in 3.5
+docker compose --file infra/containers-generic/docker-compose.prod.yml down -v --remove-orphans
+
+# 4. Remove the .env file created for docker-compose.prod.yml testing
+Remove-Item -Force .env -ErrorAction SilentlyContinue
+
+# 5. If Azure infrastructure was deployed in 3.6–3.7, tear it down:
+az stack group delete --name myapp-stack --resource-group rg-myapp --action-on-unmanage deleteAll --yes
+# Also delete the ACR if created outside the stack:
+az acr delete --name crMyApp --resource-group rg-myapp --yes 2>/dev/null || true
+
+# 6. Remove any images pushed to ACR during workflow testing
+# (handled by ACR deletion above)
+
+# 7. Remove dotnet user secrets
+dotnet user-secrets clear --project MyApp.AppHost
+
+# 8. Remove the scaffolded project directory
+cd ..
+Remove-Item -Recurse -Force MyApp   # PowerShell
+# rm -rf MyApp                      # bash
+```
+
+- [ ] No residual Docker images for `myapp-api` (`docker images | grep myapp` → empty)
+- [ ] No Azure resources remain under the test resource group
+- [ ] Scaffolded directory removed
+
 ---
 
 ## Suite 4 — Developer Workflow Extensions
@@ -469,6 +558,35 @@ npm run dev
 - [ ] Vite dev server starts and proxies API calls to `VITE_API_BASE_URL`
 - [ ] Dev login panel respects `VITE_DEV_LOGIN_ENABLED` (or falls back to `import.meta.env.DEV`)
 
+### 4.7 Cleanup
+
+```bash
+# 1. Stop Aspire (Ctrl+C)
+
+# 2. Remove the EF migration added in 4.3 (so the template stays clean)
+dotnet ef migrations remove \
+  --project Sample.Infrastructure \
+  --startup-project MyApp.Api
+
+# 3. Revert any config/featureflags.yaml edits made in 4.4
+git checkout -- config/featureflags.yaml
+
+# 4. Remove user secrets set during 4.5 hydration testing
+dotnet user-secrets clear --project MyApp.AppHost
+
+# 5. Remove generated appsettings artefacts
+Remove-Item -Force MyApp.Api/appsettings.*.json -ErrorAction SilentlyContinue
+
+# 6. Remove the scaffolded project directory
+cd ..
+Remove-Item -Recurse -Force MyApp   # PowerShell
+# rm -rf MyApp                      # bash
+```
+
+- [ ] No leftover EF migration files committed
+- [ ] No user secrets remain for the test project
+- [ ] Scaffolded directory removed
+
 ---
 
 ## Suite 5 — Observability
@@ -499,6 +617,26 @@ Check `MyApp.ServiceDefaults/Extensions.cs`:
 - [ ] `AddOpenTelemetry()` registered with traces, metrics, and logs
 - [ ] OTLP exporter is configured (commented out or behind env var) — documents the path to Azure Monitor/Grafana/Datadog
 - [ ] Aspire dashboard OTLP endpoint used for local dev
+
+### 5.4 Cleanup
+
+```bash
+# Suite 5 shares a scaffold with Suite 1 or uses a fresh minimal scaffold.
+# If a fresh scaffold was created for this suite:
+
+# 1. Stop Aspire (Ctrl+C)
+
+# 2. Remove dotnet user secrets
+dotnet user-secrets clear --project MyApp.AppHost
+
+# 3. Remove the scaffolded project directory
+cd ..
+Remove-Item -Recurse -Force MyApp   # PowerShell
+# rm -rf MyApp                      # bash
+```
+
+- [ ] Aspire stopped; no orphaned dotnet processes (`dotnet` processes terminated)
+- [ ] Scaffolded directory removed (if created fresh for this suite)
 
 ---
 
@@ -535,6 +673,31 @@ curl http://localhost:5000/.well-known/openid-configuration
 - [ ] Frontend origin is not hardcoded; reads from Aspire service refs or `Cors:AllowedOrigins` config
 - [ ] Browser devtools shows no CORS errors on API calls from frontend
 - [ ] A request from an unauthorized origin returns a CORS error (not silently allowed)
+
+### 6.5 Cleanup
+
+```bash
+# 1. Stop Aspire (Ctrl+C)
+
+# 2. Clear browser state — delete cookies for localhost to remove any lingering
+#    HttpOnly refresh token cookies from auth testing
+#    (DevTools → Application → Cookies → right-click → Clear)
+
+# 3. Revert any token lifetime changes made for 6.1 testing
+#    (restore original OpenIddict token lifetime configuration)
+
+# 4. Remove dotnet user secrets
+dotnet user-secrets clear --project MyApp.AppHost
+
+# 5. Remove the scaffolded project directory
+cd ..
+Remove-Item -Recurse -Force MyApp   # PowerShell
+# rm -rf MyApp                      # bash
+```
+
+- [ ] No `HttpOnly` refresh token cookies remain in browser for localhost
+- [ ] Token lifetime config restored to defaults
+- [ ] Scaffolded directory removed
 
 ---
 
@@ -588,6 +751,33 @@ dotnet user-secrets set "PostHog:ApiKey" "phc_yourkey" --project MyApp.AppHost
 - [ ] Seed a `manager@localhost` account with the Manager role
 - [ ] Dev login panel updated to show the new account button
 - [ ] Fitness tests don't block the new role addition
+
+### 7.6 Cleanup
+
+```bash
+# 1. Stop Aspire (Ctrl+C)
+
+# 2. Remove PostHog API key from user secrets (set in 7.3)
+dotnet user-secrets remove "PostHog:ApiKey" --project MyApp.AppHost
+
+# 3. Remove VITE_POSTHOG_KEY from .env.local (set in 7.3)
+# Edit MyApp.Web/.env.local and delete the PostHog key line
+
+# 4. Revert SSR vite.config.ts change from 7.1 (if testing in-place rather than fresh scaffold)
+git checkout -- MyApp.Web/vite.config.ts 2>/dev/null || true
+
+# 5. Revert any social provider secrets set during 7.2
+dotnet user-secrets remove "Authentication:Google:ClientId" --project MyApp.AppHost 2>/dev/null || true
+dotnet user-secrets remove "Authentication:Google:ClientSecret" --project MyApp.AppHost 2>/dev/null || true
+
+# 6. Remove the scaffolded project directory
+cd ..
+Remove-Item -Recurse -Force MyApp   # PowerShell
+# rm -rf MyApp                      # bash
+```
+
+- [ ] No third-party API keys (PostHog, social login) remain in user secrets or `.env.local`
+- [ ] Scaffolded directory removed
 
 ---
 
@@ -650,9 +840,29 @@ dotnet new webproject -n AcmeCorp -o AcmeCorp --UseAzureContainerInfra --AzureRe
 - [ ] `bin/` and `obj/` are gitignored
 - [ ] No secrets or generated artefacts appear in `git status` after a fresh scaffold + dev-setup run
 
----
+### 8.5 Cleanup
 
-## Regression Checklist (run after any significant change)
+```bash
+# 1. Uninstall the test-built NuGet package version
+dotnet new uninstall <PackageId>   # Package ID from the .nupkg, e.g. Apophix.DotnetTemplates.WebProject
+
+# 2. Re-install from source so the dev environment is back to the working state
+dotnet new install ./Module/       # (or path to the template source)
+
+# 3. Remove all scaffolded project directories from this suite
+Remove-Item -Recurse -Force App1, App2, App3, AcmeCorp, Smoke -ErrorAction SilentlyContinue
+# rm -rf App1 App2 App3 AcmeCorp Smoke   # bash
+
+# 4. Remove the .nupkg artefact
+Remove-Item -Force *.nupkg -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force Module/bin, Module/obj -ErrorAction SilentlyContinue
+```
+
+- [ ] `dotnet new webproject --list` shows only the source-installed version
+- [ ] All test scaffold directories removed
+- [ ] No `.nupkg` file left in the repo root
+
+---(run after any significant change)
 
 Quick smoke test covering the most breakage-prone areas:
 
@@ -664,6 +874,17 @@ Quick smoke test covering the most breakage-prone areas:
 - [ ] `dotnet new webproject -n SmokeAca -o SmokeAca --UseAzureContainerInfra --AzureResourcePrefix smoke` exits 0
 - [ ] `docker build -f SmokeAca/SmokeAca.Api/Dockerfile -t smoke-api:test SmokeAca/` exits 0
 - [ ] `grep -r "sync-appconfig" SmokeAca/` → 0 matches
+
+### Regression Cleanup
+
+```bash
+# Remove all scaffolded smoke directories
+Remove-Item -Recurse -Force Smoke, SmokeAca -ErrorAction SilentlyContinue
+# rm -rf Smoke SmokeAca   # bash
+
+# Remove Docker image built during regression
+docker rmi smoke-api:test 2>/dev/null || true
+```
 
 ---
 
