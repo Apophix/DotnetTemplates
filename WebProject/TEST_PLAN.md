@@ -88,7 +88,7 @@ Open the frontend URL from the Aspire dashboard.
 - [ ] Root `/` route loads — "your project starts here" landing page renders
 - [ ] No console errors in browser devtools
 - [ ] No broken network requests
-- [ ] `@tanstack/react-devtools` panel does NOT appear (SPA mode, dev build — verify DEV gate works OR confirm it appears in dev only and is absent in prod build per 1.8)
+- [ ] `@tanstack/react-devtools` panel appears in the bottom-right corner (dev build — expected; guarded by `import.meta.env.DEV`)
 
 ### 1.6 Feature flags demo
 

@@ -28,6 +28,17 @@ type AuthContextValue = {
   refreshAsync: () => Promise<boolean>
 }
 
+// ─── Session hint ─────────────────────────────────────────────────────────────
+// A non-sensitive localStorage flag that records whether the user has ever
+// authenticated in this browser. Used to skip the initial silent-refresh call
+// (and the resulting 400) when there is clearly no session to restore.
+
+const SESSION_HINT_KEY = 'web-client.session'
+
+function setSessionHint() { localStorage.setItem(SESSION_HINT_KEY, '1') }
+function clearSessionHint() { localStorage.removeItem(SESSION_HINT_KEY) }
+function hasSessionHint() { return !!localStorage.getItem(SESSION_HINT_KEY) }
+
 // ─── Module-level snapshot (for use outside React, e.g. route beforeLoad) ─────
 
 type AuthSnapshot = { isAuthenticated: boolean; user: AuthUser | null; isLoading: boolean }
@@ -71,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     accessTokenRef.current = accessToken
     if (refreshToken) refreshTokenRef.current = refreshToken
     setUser(parsedUser)
+    setSessionHint()
     _authSnapshot = { isAuthenticated: true, user: parsedUser, isLoading: false }
 
     const exp = getTokenExpiry(accessToken)
@@ -86,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshTokenRef.current = null
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
     setUser(null)
+    clearSessionHint()
     _authSnapshot = { isAuthenticated: false, user: null, isLoading: false }
   }, []) // stable
 
@@ -125,7 +138,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshAsync])
 
   // Attempt silent restore on app start; signal init completion regardless of outcome.
+  // Skip entirely when there is no session hint — avoids a guaranteed 400 from the
+  // token endpoint on first visit or after logout.
   useEffect(() => {
+    if (!hasSessionHint() && !refreshTokenRef.current) {
+      setIsLoading(false)
+      _authSnapshot = { ..._authSnapshot, isLoading: false }
+      _initResolve?.()
+      return
+    }
     refreshAsync().finally(() => {
       setIsLoading(false)
       _authSnapshot = { ..._authSnapshot, isLoading: false }

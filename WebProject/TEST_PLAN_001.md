@@ -51,12 +51,12 @@ cd MyApp
 .\scripts\dev-setup.ps1
 ```
 
-- [ ] Prerequisite checks pass (dotnet, node, docker)
-- [ ] `dotnet restore` completes without errors
-- [ ] `npm ci` inside `MyApp.Web` completes without errors
-- [ ] `.env.local` created from `.env.example` in `MyApp.Web`
-- [ ] User secrets check runs; lists any missing secrets with clear guidance
-- [ ] Script is idempotent — running it twice produces no errors
+- [x] Prerequisite checks pass (dotnet, node, docker)
+- [x] `dotnet restore` completes without errors
+- [x] `npm ci` inside `MyApp.Web` completes without errors
+- [x] `.env.local` created from `.env.example` in `MyApp.Web`
+- [x] User secrets check runs; lists any missing secrets with clear guidance
+- [x] Script is idempotent — running it twice produces no errors
 
 ### 1.3 Unit and fitness tests
 
@@ -64,9 +64,9 @@ cd MyApp
 dotnet test MyApp.slnx --configuration Release --filter "FullyQualifiedName!~Integration"
 ```
 
-- [ ] All unit tests pass
-- [ ] Architecture / fitness tests pass (module reference rules enforced)
-- [ ] Zero compilation errors
+- [x] All unit tests pass
+- [x] Architecture / fitness tests pass (module reference rules enforced)
+- [x] Zero compilation errors
 
 ### 1.4 Aspire local development startup
 
@@ -74,21 +74,24 @@ dotnet test MyApp.slnx --configuration Release --filter "FullyQualifiedName!~Int
 dotnet run --project MyApp.AppHost
 ```
 
-- [ ] Aspire dashboard opens (default: https://localhost:15888)
-- [ ] Dashboard shows: `MyApp.Api`, `MyApp.Web`, `MyApp.MigrationService`, `database`
+- [x] Aspire dashboard opens (default: https://localhost:15888)
+- [x] Dashboard shows: `MyApp.Api`, `MyApp.Web`, `MyApp.MigrationService`, `database`
 - [ ] `MyApp.MigrationService` runs to completion (exit 0) — migrations applied
-- [ ] `MyApp.Api` reaches healthy state — `/health` returns 200
-- [ ] `MyApp.Web` (Vite dev server) starts — frontend accessible in browser
-- [ ] No "unhealthy" services after 60 seconds
+	> Fail: first run exits 1 (though still does actually run migrations)
+- [x] `MyApp.Api` reaches healthy state — `/health` returns 200
+- [x] `MyApp.Web` (Vite dev server) starts — frontend accessible in browser
+- [x] No "unhealthy" services after 60 seconds
 
 ### 1.5 Frontend — baseline
 
 Open the frontend URL from the Aspire dashboard.
 
-- [ ] Root `/` route loads — "your project starts here" landing page renders
-- [ ] No console errors in browser devtools
+- [x] Root `/` route loads — "your project starts here" landing page renders
+- [x] No console errors in browser devtools
 - [ ] No broken network requests
-- [ ] `@tanstack/react-devtools` panel does NOT appear (SPA mode, dev build — verify DEV gate works OR confirm it appears in dev only and is absent in prod build per 1.8)
+	> Fail: /token endpoint gives 400 request
+- [ ] `@tanstack/react-devtools` panel appears in the bottom-right corner (dev build — expected; guarded by `import.meta.env.DEV`)
+	> Fail but expected (should appear in dev mode; will update test script)
 
 ### 1.6 Feature flags demo
 
