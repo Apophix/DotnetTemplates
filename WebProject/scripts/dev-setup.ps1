@@ -56,7 +56,8 @@ if (-not $solution) {
     Write-Host "  [ERROR] No solution file found in $root" -ForegroundColor Red
     exit 1
 }
-& dotnet restore $solution.FullName --quiet
+& dotnet restore $solution.FullName --verbosity quiet
+if ($LASTEXITCODE -ne 0) { Write-Host "  [ERROR] dotnet restore failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 Write-Host "  [OK] $($solution.Name)" -ForegroundColor Green
 
 # ── 3. Install npm packages ───────────────────────────────────────────────────
@@ -67,6 +68,7 @@ $webDir = Get-ChildItem $root -Directory |
 if ($webDir) {
     Push-Location $webDir.FullName
     try { & npm install --silent } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { Write-Host "  [ERROR] npm install failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
     Write-Host "  [OK] $($webDir.Name)" -ForegroundColor Green
 } else {
     Write-Host "  [SKIP] No package.json found" -ForegroundColor DarkGray
