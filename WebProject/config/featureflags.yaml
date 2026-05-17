@@ -1,20 +1,23 @@
-# Feature Flags Configuration as Code
+# Feature Flags — config as code
 #
-# This file defines feature flags with per-environment initial enabled states.
+# Source of truth for feature flag definitions and per-environment initial states.
+# Run gen-appsettings.cs to bake these into appsettings.{Env}.json for any environment.
 #
-# All feature flags are bootstrap-only (skip-if-exists in the import script):
-# the first import sets the initial state; subsequent imports do not override
-# the flag state in Azure App Configuration unless explicitly deleted first.
+# Flags apply to local dev (via appsettings.local.json) and all deployed environments.
+# There is no Azure dependency — this file works the same whether or not you use
+# Azure App Configuration.
 #
 # Format:
 # FlagName:
 #   description: Human-readable description
 #   shared:                    # OPTIONAL: initial state for all envs with no label
 #     enabled: true|false
-#   <environment-label>:       # Environment-specific initial state
+#   <environment-label>:       # Environment-specific override
 #     enabled: true|false
 #
-# If no "shared" section is provided, the flag starts unset in all environments.
+# Azure App Configuration (optional): the sync-appconfig.sh script imports these flags
+# using skip-if-exists semantics — first import sets initial state; subsequent imports
+# do not override flag state already managed in Azure Portal.
 #
 # Add your feature flags here:
 

@@ -39,8 +39,7 @@
         "infra/deploy.aca.sh": "infra/deploy.sh",
         "infra/README.aca.md": "infra/README.md",
         ".github/workflows/deploy.aca.yml": ".github/workflows/deploy.yml",
-        ".github/workflows/pr.aca.yml": ".github/workflows/pr.yml",
-        "config/sync-appconfig.aca.sh": "config/sync-appconfig.sh"
+        ".github/workflows/pr.aca.yml": ".github/workflows/pr.yml"
       },
       "modifiers": [
         {
@@ -58,8 +57,7 @@
           "condition": "(!UseAzureAppServiceInfra && !UseAzureContainerInfra)",
           "exclude": [
             ".github/workflows/**",
-            "infra/**",
-            "config/**"
+            "infra/**"
           ]
         },
         {
@@ -78,7 +76,6 @@
             ".github/workflows/deploy.aca.yml",
             ".github/workflows/pr.aca.yml",
             ".github/workflows/infra.yml",
-            "config/sync-appconfig.aca.sh",
             "WebProject.Api/Dockerfile"
           ]
         },
@@ -92,8 +89,7 @@
             "infra/README.md",
             "infra/modules/app-service.bicep",
             ".github/workflows/deploy.yml",
-            ".github/workflows/pr.yml",
-            "config/sync-appconfig.sh"
+            ".github/workflows/pr.yml"
           ]
         }
       ]

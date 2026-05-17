@@ -92,7 +92,76 @@ The test runs on every build/CI and fails with a list of violations if the rule 
 
 ---
 
-## Frontend
+## Configuration as Code
+
+All application configuration lives in `config/` — always, regardless of which infrastructure path you choose.
+
+| File | Purpose |
+|---|---|
+| `appconfig.yaml` | Non-secret settings, organized by environment (`shared`, `staging`, `production`) |
+| `featureflags.yaml` | Feature flag definitions with per-environment initial states |
+| `gen-appsettings.cs` | Script that reads both files and generates `appsettings.{Env}.json` |
+| `user-secrets.example.json` | Documents which secrets are required locally; used by `dev-hydrate.ps1` |
+
+`gen-appsettings.cs` is the single tool for all infra paths. The output format and how secrets are handled differs by path:
+
+### No Azure (Aspire / Docker Compose)
+
+Plain values only — no Key Vault references. Generate and commit the files:
+
+```bash
+dotnet run config/gen-appsettings.cs -- --env staging    --output MyApp.Api/appsettings.Staging.json
+dotnet run config/gen-appsettings.cs -- --env production --output MyApp.Api/appsettings.Production.json
+```
+
+Secrets are injected at deploy time via environment variables (CI/CD secrets → container env or App Service application settings).
+
+### Azure App Service
+
+Mark secrets in `appconfig.yaml` with `keyVaultSecret:` instead of a plain value:
+
+```yaml
+staging:
+  ConnectionStrings:Default:
+    keyVaultSecret: connection-string-staging   # name of the secret in Key Vault
+```
+
+Then generate with your vault name:
+
+```bash
+dotnet run config/gen-appsettings.cs -- --env staging --vault kv-myapp-stg-xxxx \
+  --output MyApp.Api/appsettings.Staging.json
+```
+
+The generated file contains Azure Key Vault reference URIs (`@Microsoft.KeyVault(...)`), not raw secret values — safe to review, but **do not commit** (the file is gitignored; CI regenerates it at build time). App Service resolves the Key Vault URIs at runtime via the managed identity provisioned by `infra/azure-app-service/`.
+
+```bash
+# Deploy or update infrastructure
+./infra/azure-app-service/deploy.sh --location eastus
+```
+
+### Azure Container Apps
+
+Identical config workflow to App Service — same YAML files, same `gen-appsettings.cs` script, same Key Vault reference format. The managed identity is provisioned by `infra/azure-container-apps/`.
+
+```bash
+dotnet run config/gen-appsettings.cs -- --env staging --vault kv-myapp-stg-xxxx \
+  --output MyApp.Api/appsettings.Staging.json
+
+./infra/azure-container-apps/deploy.sh --location eastus
+```
+
+### Local dev
+
+Local config is not generated — it lives in `appsettings.local.json` (gitignored, created by `dev-setup.ps1` from the `.example` file). Edit it directly. Feature flags and settings that need to match a deployed environment can be pulled from Azure Key Vault:
+
+```powershell
+.\scripts\dev-hydrate.ps1
+```
+
+---
+
+
 
 - **TanStack Start** in SPA mode (no SSR / server functions)
 - **TanStack Router** for file-based routing

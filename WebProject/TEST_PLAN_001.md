@@ -39,9 +39,9 @@ cd MyApp
 
 - [x] Command exits 0
 - [x] Solution file `MyApp.slnx` (or `MyApp.sln`) present at root
-- [x] No `.github/` folder created *// this did create, but that's intentional*
+- [x] `.github/` folder present with Copilot instructions (`copilot-instructions.md` and `instructions/*.md`); no `.github/workflows/` subfolder
 - [x] No `infra/` folder created
-- [x] No `config/` folder created
+- [ ] `config/` folder present with: `appconfig.yaml`, `featureflags.yaml`, `gen-appsettings.cs`, `user-secrets.example.json`; no `sync-appconfig*.sh` files
 - [x] All projects renamed: `WebProject.*` → `MyApp.*`, `Sample.*` unchanged
 - [x] All namespace references updated (spot-check `MyApp.Api/Program.cs`)
 
@@ -99,8 +99,23 @@ Navigate to `/demo/feature-flags`.
 
 - [ ] Page loads without errors
 - [ ] Feature flag state is fetched from the API (`GET /api/feature-flags` or similar)
-- [ ] `ExampleFlag` is displayed with its current value (false in production config, true in staging)
-- [ ] Changing flag value in `config/featureflags.yaml` and restarting API reflects in the UI
+- [ ] `ExampleFlag` is displayed with its current value (`false` by default in local dev)
+- [ ] Toggle the flag locally: edit `appsettings.local.json` → set `FeatureManagement.ExampleFlag: true` → restart API → value reflects in the UI
+
+### 1.7 Config generation (no Azure)
+
+Run from repo root:
+
+```bash
+dotnet run config/gen-appsettings.cs -- --env staging    --output MyApp.Api/appsettings.Staging.json
+dotnet run config/gen-appsettings.cs -- --env production --output MyApp.Api/appsettings.Production.json
+```
+
+- [ ] Both commands exit 0
+- [ ] `appsettings.Staging.json` contains `"ExampleFlag": true` under `FeatureManagement`
+- [ ] `appsettings.Production.json` contains `"ExampleFlag": false` under `FeatureManagement`
+- [ ] No Key Vault reference URIs in either file (no Azure — plain values only)
+- [ ] `git status` shows both files as ignored (gitignored — CI generates them at build time, not committed)
 
 ### 1.7 Authentication — dev login panel
 

@@ -1,14 +1,16 @@
-# AppConfig Configuration as Code
+# Application Configuration — config as code
 #
-# This file defines application settings organized by environment label.
+# Source of truth for non-secret settings across all environments.
+# Run gen-appsettings.cs to produce appsettings.{Env}.json from this file.
 #
 # Format:
-# - "shared" section: settings with no label (applies to all environments unless overridden)
+# - "shared" section: settings that apply to all environments unless overridden
 # - Environment labels (e.g., "staging", "production"): environment-specific overrides
 #
-# For Key Vault secrets:
-#   - keyVaultSecret: <name> — REQUIRED: the secret name within the vault
-#   - keyVaultName: <name> — OPTIONAL: explicit vault name override
+# Azure Key Vault (optional — only relevant when using Azure infra):
+#   Wrap a value as a secret reference instead of a plain string:
+#   keyVaultSecret: <name>      — REQUIRED: secret name within the vault
+#   keyVaultName: <name>        — OPTIONAL: explicit vault override
 #     (when absent, the import script resolves the vault by environment tag)
 
 shared:

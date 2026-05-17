@@ -71,7 +71,7 @@ function DevLoginPanelInner() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-xl text-sm w-64 space-y-3">
+    <div className="fixed bottom-4 left-4 z-50 rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-xl text-sm w-64 space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
         Dev Login Panel
       </p>

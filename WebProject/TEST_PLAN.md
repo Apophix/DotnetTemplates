@@ -41,7 +41,7 @@ cd MyApp
 - [ ] Solution file `MyApp.slnx` (or `MyApp.sln`) present at root
 - [ ] `.github/` folder present with Copilot instructions (`copilot-instructions.md` and `instructions/*.md`); no `.github/workflows/` subfolder
 - [ ] No `infra/` folder created
-- [ ] No `config/` folder created
+- [ ] `config/` folder present with: `appconfig.yaml`, `featureflags.yaml`, `gen-appsettings.cs`, `user-secrets.example.json`; no `sync-appconfig*.sh` files
 - [ ] All projects renamed: `WebProject.*` → `MyApp.*`, `Sample.*` unchanged
 - [ ] All namespace references updated (spot-check `MyApp.Api/Program.cs`)
 
@@ -96,8 +96,23 @@ Navigate to `/demo/feature-flags`.
 
 - [ ] Page loads without errors
 - [ ] Feature flag state is fetched from the API (`GET /api/feature-flags` or similar)
-- [ ] `ExampleFlag` is displayed with its current value (false in production config, true in staging)
-- [ ] Changing flag value in `config/featureflags.yaml` and restarting API reflects in the UI
+- [ ] `ExampleFlag` is displayed with its current value (`false` by default in local dev)
+- [ ] Toggle the flag locally: edit `appsettings.local.json` → set `FeatureManagement.ExampleFlag: true` → restart API → value reflects in the UI
+
+### 1.7 Config generation (no Azure)
+
+Run from repo root:
+
+```bash
+dotnet run config/gen-appsettings.cs -- --env staging    --output MyApp.Api/appsettings.Staging.json
+dotnet run config/gen-appsettings.cs -- --env production --output MyApp.Api/appsettings.Production.json
+```
+
+- [ ] Both commands exit 0
+- [ ] `appsettings.Staging.json` contains `"ExampleFlag": true` under `FeatureManagement`
+- [ ] `appsettings.Production.json` contains `"ExampleFlag": false` under `FeatureManagement`
+- [ ] No Key Vault reference URIs in either file (no Azure — plain values only)
+- [ ] `git status` shows both files as ignored (gitignored — CI generates them at build time, not committed)
 
 ### 1.7 Authentication — dev login panel
 
@@ -210,25 +225,28 @@ cd MyApp
 - [ ] `.github/workflows/staging.aca.yml` NOT present
 - [ ] `infra/azure-app-service/` present: `main.bicep`, `main.bicepparam`, `README.md`
 - [ ] `infra/containers-generic/` present: `docker-compose.yml`, `docker-compose.prod.yml`, `README.md`
-- [ ] `config/gen-appconfig.cs` present (or `gen-appsettings.cs`)
+- [ ] `config/gen-appsettings.cs` present
 - [ ] `config/appconfig.yaml` and `config/featureflags.yaml` present
 - [ ] All resource name placeholders replaced: `webprojectazureprefix` → `myapp` throughout Bicep and workflow files
 - [ ] `WebProject.Api/Dockerfile` NOT present (App Service variant doesn't containerize the API)
 
-### 2.2 Config generation
+### 2.2 Config generation (Azure App Service — Key Vault references)
 
 ```bash
-dotnet run config/gen-appsettings.cs -- --env staging --output MyApp.Api/appsettings.Staging.json
-dotnet run config/gen-appsettings.cs -- --env production --output MyApp.Api/appsettings.Production.json
+dotnet run config/gen-appsettings.cs -- --env staging    --vault myapp-kv-staging \
+  --output MyApp.Api/appsettings.Staging.json
+dotnet run config/gen-appsettings.cs -- --env production --vault myapp-kv-prod \
+  --output MyApp.Api/appsettings.Production.json
 ```
 
 - [ ] Staging generation exits 0
 - [ ] `MyApp.Api/appsettings.Staging.json` created with valid JSON
 - [ ] `ExampleFlag` appears under `FeatureManagement` with value `true` in staging
+- [ ] Any `keyVaultSecret:` entries in `appconfig.yaml` produce `@Microsoft.KeyVault(...)` URI strings (not raw secret values)
 - [ ] Production generation exits 0
 - [ ] `MyApp.Api/appsettings.Production.json` created with valid JSON
 - [ ] `ExampleFlag` value is `false` in production
-- [ ] Both files are gitignored — `git status` shows them as ignored
+- [ ] Both files are gitignored — `git status` shows them as ignored (CI regenerates at build time)
 
 ### 2.3 All Suite 1 local dev checks apply
 
@@ -366,6 +384,7 @@ cd MyApp
 - [ ] `WebProject.Api/Dockerfile` present
 - [ ] Bootstrap and deploy scripts present (`bootstrap.ps1`, `bootstrap.sh`, `deploy.ps1`, `deploy.sh`)
 - [ ] `AzureResourcePrefix` token replaced: `webprojectazureprefix` → `myapp`
+- [ ] `config/` present with: `appconfig.yaml`, `featureflags.yaml`, `gen-appsettings.cs`, `user-secrets.example.json`
 
 ### 3.2 Dockerfile build
 
@@ -379,16 +398,17 @@ docker build -f MyApp.Api/Dockerfile -t myapp-api:test .
 - [ ] `docker run --rm -e ASPNETCORE_ENVIRONMENT=Development -p 8080:8080 myapp-api:test` starts without crash
 - [ ] `/alive` returns 200
 
-### 3.3 gen-appsettings for ACA
+### 3.3 Config generation (ACA — Key Vault references)
 
 ```bash
-dotnet run config/gen-appsettings.cs -- --env staging --output MyApp.Api/appsettings.Staging.json
-docker build -f MyApp.Api/Dockerfile -t myapp-api:staging .
+dotnet run config/gen-appsettings.cs -- --env staging    --vault myapp-kv-staging \
+  --output MyApp.Api/appsettings.Staging.json
 ```
 
-- [ ] `appsettings.Staging.json` present before `docker build`
-- [ ] Staging build exits 0
-- [ ] Running the staging image: `ASPNETCORE_ENVIRONMENT=Staging` — feature flags reflect staging values
+- [ ] `appsettings.Staging.json` present and contains valid JSON
+- [ ] Any `keyVaultSecret:` entries in `appconfig.yaml` produce `@Microsoft.KeyVault(...)` URI strings
+- [ ] `ExampleFlag: true` under `FeatureManagement` in staging output
+- [ ] File is gitignored — `git status` shows it as ignored (CI regenerates before `docker build`)
 
 ### 3.4 Workflow syntax validation
 
