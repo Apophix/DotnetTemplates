@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     WebProject — One-time bootstrap for Azure infrastructure.
 

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Pulls staging secrets from Azure Key Vault into local dotnet user-secrets.
