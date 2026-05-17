@@ -37,8 +37,8 @@ dotnet new webproject -n MyApp -o MyApp
 cd MyApp
 ```
 
-- [ ] Command exits 0
-- [ ] Solution file `MyApp.slnx` (or `MyApp.sln`) present at root
+- [x] Command exits 0
+- [x] Solution file `MyApp.slnx` (or `MyApp.sln`) present at root
 - [ ] `.github/` folder present with Copilot instructions (`copilot-instructions.md` and `instructions/*.md`); no `.github/workflows/` subfolder
 - [ ] No `infra/` folder created
 - [ ] No `config/` folder created
