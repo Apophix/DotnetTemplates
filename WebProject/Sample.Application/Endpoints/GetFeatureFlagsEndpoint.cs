@@ -1,7 +1,10 @@
 using FastEndpoints;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.FeatureManagement;
 
-namespace WebProject.Api.Endpoints;
+namespace Sample.Application.Endpoints;
 
 public class GetFeatureFlagsEndpoint : Ep.NoReq.Res<FeatureFlagsResponse>
 {
