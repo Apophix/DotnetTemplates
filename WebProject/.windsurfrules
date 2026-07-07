@@ -6,7 +6,7 @@ Full-stack web app: .NET 10 + FastEndpoints + EF Core + Aspire (backend), React 
 
 ## Workflow Rules
 - **Commits**: Auto-commit is OK when working in a dedicated branch or autonomously; otherwise wait for explicit user instruction
-- **Pause after backend API edits** — Aspire requires a manual restart; prompt the user before continuing to frontend work
+- **Pause for Aspire only when blocked** — after backend API edits you can usually keep going. Pause and prompt the user to stop Aspire *only* if a running Aspire instance locks the API build output (file locks preventing `dotnet build` / client regen). If the build and client regen succeed, no pause is needed.
 - **One realm at a time** — complete backend changes before switching to frontend (unless told otherwise)
 - **Prefer backend-first** when the task spans both realms
 - **Windows/PowerShell** — always use PowerShell-compatible commands

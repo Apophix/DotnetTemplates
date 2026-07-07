@@ -120,7 +120,7 @@ function Hero() {
 
       {/* Terminal hint */}
       <div className="inline-flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.025] px-3.5 py-2">
-        <span className="text-slate-600 font-mono text-sm select-none">$</span>
+        <span className="text-slate-500 font-mono text-sm select-none">$</span>
         <span className="text-slate-500 font-mono text-sm">edit</span>
         <span className="text-indigo-400 font-mono text-sm">
           src/routes/index.tsx
@@ -142,13 +142,13 @@ function AuthCard() {
           <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">
             Auth
           </h2>
-          <p className="text-xs text-slate-600">OpenIddict · ASP.NET Core Identity · PKCE</p>
+          <p className="text-xs text-slate-400">OpenIddict · ASP.NET Core Identity · PKCE</p>
         </div>
         <div className="flex items-center gap-1.5">
           <span
             className={`h-2 w-2 rounded-full ${isAuthenticated ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-slate-700'}`}
           />
-          <span className={`text-xs ${isAuthenticated ? 'text-emerald-400' : 'text-slate-600'}`}>
+          <span className={`text-xs ${isAuthenticated ? 'text-emerald-400' : 'text-slate-400'}`}>
             {isAuthenticated ? 'authenticated' : 'not signed in'}
           </span>
         </div>
@@ -183,7 +183,7 @@ function AuthCard() {
           <p className="text-sm text-slate-500 leading-snug">
             Use the{' '}
             <span className="text-slate-300 font-medium">dev login panel</span>{' '}
-            <span className="text-slate-600">(bottom-left)</span> to sign in with a seeded account.
+            <span className="text-slate-400">(bottom-left)</span> to sign in with a seeded account.
           </p>
           <div className="grid grid-cols-2 gap-2">
             {['user@localhost', 'admin@localhost'].map((email) => (
@@ -192,7 +192,7 @@ function AuthCard() {
                 className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2"
               >
                 <p className="text-xs font-mono text-slate-500">{email}</p>
-                <p className="text-[10px] text-slate-700 mt-0.5">DevPass1!</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">DevPass1!</p>
               </div>
             ))}
           </div>
@@ -219,12 +219,12 @@ function FeatureFlagsCard() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-400" />
             </span>
-            <span className="text-[10px] text-slate-600">live from API</span>
+            <span className="text-[10px] text-slate-400">live from API</span>
           </div>
         </div>
         <Link
           to="/demo/feature-flags"
-          className="text-[10px] text-slate-600 hover:text-violet-300 transition-colors"
+          className="text-[10px] text-slate-400 hover:text-violet-300 transition-colors"
         >
           all patterns →
         </Link>
@@ -252,7 +252,7 @@ function FeatureFlagsCard() {
                 />
                 <span className="font-mono text-xs text-slate-300 flex-1 truncate">{name}</span>
                 <span
-                  className={`text-[10px] font-semibold uppercase tracking-widest ${enabled ? 'text-emerald-400' : 'text-slate-700'}`}
+                  className={`text-[10px] font-semibold uppercase tracking-widest ${enabled ? 'text-emerald-400' : 'text-slate-500'}`}
                 >
                   {enabled ? 'on' : 'off'}
                 </span>
@@ -317,7 +317,7 @@ const colorMap: Record<StackColor, { label: string; pill: string; dot: string }>
 function StackSection() {
   return (
     <section className="space-y-4">
-      <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-600">Stack</h2>
+      <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Stack</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {STACK.map(({ category, color, tags }) => {
           const c = colorMap[color]

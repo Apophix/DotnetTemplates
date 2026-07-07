@@ -41,7 +41,7 @@ cd MyApp
 - [x] Solution file `MyApp.slnx` (or `MyApp.sln`) present at root
 - [x] `.github/` folder present with Copilot instructions (`copilot-instructions.md` and `instructions/*.md`); no `.github/workflows/` subfolder
 - [x] No `infra/` folder created
-- [ ] `config/` folder present with: `appconfig.yaml`, `featureflags.yaml`, `gen-appsettings.cs`, `user-secrets.example.json`; no `sync-appconfig*.sh` files
+- [x] `config/` folder present with: `appconfig.yaml`, `featureflags.yaml`, `gen-appsettings.cs`, `user-secrets.example.json`; no `sync-appconfig*.sh` files
 - [x] All projects renamed: `WebProject.*` → `MyApp.*`, `Sample.*` unchanged
 - [x] All namespace references updated (spot-check `MyApp.Api/Program.cs`)
 
@@ -76,8 +76,9 @@ dotnet run --project MyApp.AppHost
 
 - [x] Aspire dashboard opens (default: https://localhost:15888)
 - [x] Dashboard shows: `MyApp.Api`, `MyApp.Web`, `MyApp.MigrationService`, `database`
-- [ ] `MyApp.MigrationService` runs to completion (exit 0) — migrations applied
+- [x] `MyApp.MigrationService` runs to completion (exit 0) — migrations applied
 	> Fail: first run exits 1 (though still does actually run migrations)
+	> Fixed
 - [x] `MyApp.Api` reaches healthy state — `/health` returns 200
 - [x] `MyApp.Web` (Vite dev server) starts — frontend accessible in browser
 - [x] No "unhealthy" services after 60 seconds
@@ -88,19 +89,19 @@ Open the frontend URL from the Aspire dashboard.
 
 - [x] Root `/` route loads — "your project starts here" landing page renders
 - [x] No console errors in browser devtools
-- [ ] No broken network requests
+- [x] No broken network requests
 	> Fail: /token endpoint gives 400 request
-- [ ] `@tanstack/react-devtools` panel appears in the bottom-right corner (dev build — expected; guarded by `import.meta.env.DEV`)
-	> Fail but expected (should appear in dev mode; will update test script)
+	> Fixed
+- [x] `@tanstack/react-devtools` panel appears in the bottom-right corner (dev build — expected; guarded by `import.meta.env.DEV`)
 
 ### 1.6 Feature flags demo
 
 Navigate to `/demo/feature-flags`.
 
-- [ ] Page loads without errors
-- [ ] Feature flag state is fetched from the API (`GET /api/feature-flags` or similar)
-- [ ] `ExampleFlag` is displayed with its current value (`false` by default in local dev)
-- [ ] Toggle the flag locally: edit `appsettings.local.json` → set `FeatureManagement.ExampleFlag: true` → restart API → value reflects in the UI
+- [x] Page loads without errors
+- [x] Feature flag state is fetched from the API (`GET /api/feature-flags` or similar)
+- [x] `ExampleFlag` is displayed with its current value (`false` by default in local dev)
+- [x] Toggle the flag locally: edit `appsettings.local.json` → set `FeatureManagement.ExampleFlag: true` → restart API → value reflects in the UI
 
 ### 1.7 Config generation (no Azure)
 
